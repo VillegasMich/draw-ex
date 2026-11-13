@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "draw-ex",
-  "version": "0.1.0",
   "identifier": "com.villegasmich.drawex",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -25,8 +24,6 @@
     }
   },
   "bundle": {
-    "active": true,
-    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

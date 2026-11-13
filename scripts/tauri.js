@@ -12,7 +12,8 @@ const args = process.argv.slice(2);
 if (args[0] === 'dev') {
   const port = resolveDevPort(process.env.DRAW_EX_DEV_PORT);
   const config = { build: { devUrl: `http://localhost:${port}` } };
-  args.push('--config', JSON.stringify(config));
+  // Right after `dev`, so it reaches the CLI even when app args follow `--`.
+  args.splice(1, 0, '--config', JSON.stringify(config));
 }
 
 run(args, 'pnpm tauri').catch((error) => {
