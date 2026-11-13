@@ -18,7 +18,9 @@ paths listed under its **Owns**. Its **Done when** list is the merge bar.
   dependency.
 - `crates/card-db/`: YGOPRODeck client, SQLite store, image cache. No Tauri dependency.
 - `src-tauri/`: the app shell. Keep commands thin and put the logic in the crates.
-- `src/`: TypeScript frontend.
+- `src/`: Svelte 5 + TypeScript frontend. The IPC types come from `tauri-specta`:
+  regenerate them after changing a command or event, rather than editing the generated
+  file.
 
 ## Recognition lives in the draw2 fork, not here
 

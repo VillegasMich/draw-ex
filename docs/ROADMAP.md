@@ -9,8 +9,11 @@ covers only order, ownership and done-criteria.
 - **Phases run in order.** Tickets inside a phase run in parallel unless a ticket lists a
   dependency.
 - **Repo**: `draw-ex` (this repo) or `draw2` (the fork
-  [`VillegasMich/draw2`](https://github.com/VillegasMich/draw2)). An orchestrator that
-  works in one repo at a time needs a separate session for the `draw2` tickets.
+  [`VillegasMich/draw2`](https://github.com/VillegasMich/draw2), checked out at
+  `../draw2`). Both repos are run with the Orca CLI: one worktree per ticket branch, in
+  whichever repo the ticket names. F2 touches both repos, so it gets a `feat/contracts`
+  worktree in each; merge the draw2 side and tag it first, because the draw-ex side pins
+  that tag.
 - **Owns** lists the paths a ticket may create or change. Tickets in the same phase own
   disjoint paths, so their branches merge without conflicts. Shared files are handled
   in [Conflict hotspots](#conflict-hotspots).
@@ -31,13 +34,11 @@ Phase 2        I1 ─► I2       (needs A3 B1 B2 C1 C2 D2 D3)
 Phase 3        R1 ─► R2
 ```
 
-## Decisions needed before kickoff
+## Decisions made
 
-- **Frontend framework** (needed by F1). Recommendation: **Svelte 5**, which keeps
-  reactive panels small and fast.
-- **TS bindings generator** (needed by F2). Recommendation: **`tauri-specta`**, which
-  generates TypeScript types and command wrappers from the Rust IPC module so frontend
-  and backend agents cannot drift apart.
+- **Frontend framework**: Svelte 5 (F1).
+- **TS bindings**: `tauri-specta` generates TypeScript types and command wrappers from
+  the Rust IPC module (F2).
 
 ---
 
@@ -49,8 +50,7 @@ Everything else builds on these two tickets. Merge them to `main` before startin
 - **Repo**: draw-ex. **Branch**: `feat/scaffold`
 - **Owns**: everything (first code in the repo).
 - **Scope**:
-  - Cargo workspace, Tauri v2 app (`src-tauri/`), Vite + TypeScript + chosen framework
-    (`src/`).
+  - Cargo workspace, Tauri v2 app (`src-tauri/`), Svelte 5 + TypeScript + Vite (`src/`).
   - Empty library crates `crates/tracker` and `crates/card-db`.
   - `.gitignore` (including `.cargo/config.toml`), AGPL-3.0 `LICENSE`.
   - GitHub Actions CI on macOS + Windows: `cargo fmt --check`,
@@ -77,7 +77,8 @@ Everything else builds on these two tickets. Merge them to `main` before startin
     - Depend on `draw-core-v0.0.1`.
     - Add the IPC module `src-tauri/src/ipc/`: every command and event the app will use
       (submit frame, detections, track events, card lookup, settings, model download
-      progress, cache stats), with stub handlers. Generate TS bindings.
+      progress, cache stats), with stub handlers. Generate the TS bindings with
+      `tauri-specta`.
     - Add public API signatures for `card-db` (`CardDb`, `ImageCache`, `Deck`) and
       `tracker` (`Tracker`, `TrackEvent`, `PlayerAssignment`, `DuelLog`), with `todo!()`
       bodies or in-memory fakes.
@@ -285,7 +286,9 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - [ ] Installers from CI run on clean macOS and Windows machines, with no dev tools
     installed, through first-run download to live recognition.
 
-#### R2: Signing
+#### R2: Signing (optional)
+- **Only needed** for public distribution to non-technical users; see the README's
+  "Distribution and signing" section.
 - **Depends on**: R1, plus an Apple Developer account and a Windows code-signing
   certificate.
 - **Done when**:

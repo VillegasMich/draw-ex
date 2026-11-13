@@ -39,13 +39,12 @@ the table, with their artwork, type, stats and effect text.
 
 ## Tech stack
 
-Planned choices. Items marked _TBD_ are listed under [Open questions](#open-questions).
-
 | Area | Technology | Why |
 |---|---|---|
 | App shell and packaging | [Tauri v2](https://v2.tauri.app/) | Rust backend + web UI; bundles Windows NSIS `.exe` and macOS `.dmg` |
 | Backend language | Rust (stable), `tokio` async runtime | Performance for inference and I/O; Tauri's native language |
-| Frontend | TypeScript + Vite; framework _TBD_ (Svelte leading) | Polished overlay panels with web tech |
+| Frontend | [Svelte 5](https://svelte.dev/) + TypeScript + Vite | Small, fast reactive panels; polished overlay with web tech |
+| IPC types | [`tauri-specta`](https://github.com/specta-rs/tauri-specta) | Generates TS types and command wrappers from Rust, so frontend and backend cannot drift apart |
 | Camera capture | `getUserMedia` in the webview; `nokhwa` as fallback | Smooth native-rate preview; multiple cameras by device ID |
 | Card recognition | `draw-core` crate from the draw2 fork | Single owner of the recognition logic; see [Recognition](#recognition-draw-core-owned-by-the-draw2-fork) |
 | Inference runtime | [ONNX Runtime](https://onnxruntime.ai/) via [`ort`](https://ort.pyke.io/): CoreML (macOS), DirectML (Windows), CPU fallback | Runs the DRAW 2 ONNX exports with GPU acceleration on both platforms |
@@ -273,12 +272,33 @@ and done-criteria. In short:
 
 ## Open questions
 
-- **Frontend framework**: Svelte is the leading option for lightweight reactive panels;
-  not decided yet.
 - **Default ViT variant and inference rate per platform**: decided by benchmarks.
 - **Duel log sharing**: whether to also export a human-readable summary.
-- **Code signing**: an Apple Developer account is needed for notarized `.dmg` builds;
-  Windows builds trigger SmartScreen warnings until they are signed.
+- **Code signing**: only needed to distribute installers to other people (see
+  [Distribution and signing](#distribution-and-signing)). Whether to pay for it is
+  undecided.
+
+## Distribution and signing
+
+Signing proves to the operating system who built an installer and that nobody modified
+it. Without it, the app still works, but other people's machines warn about it or block
+it:
+
+| | Unsigned installer | Signed | Cost |
+|---|---|---|---|
+| **macOS** | Gatekeeper blocks a downloaded app. Users must allow it under System Settings → Privacy & Security → "Open Anyway" | Opens normally once also **notarized** (scanned by Apple) | Apple Developer Program, $99/year |
+| **Windows** | SmartScreen shows "Windows protected your PC". Users click "More info → Run anyway". Some antivirus tools may flag it | No warning, or a warning that fades as downloads build reputation | Code-signing certificate, about $100–400/year depending on the provider |
+
+**Signing is not needed** for development, for builds you make and run on your own
+machine, or for a few testers who can click past the warnings. Unsigned macOS builds
+still get an ad-hoc signature, which Apple Silicon requires to run at all; Tauri applies
+it automatically.
+
+**Signing becomes worth it** when the app is shared publicly with non-technical users.
+
+**Side effect on macOS**: camera permission is tied to the app's signing identity. Ad-hoc
+builds can lose the permission after an update, so users get asked again; a stable
+Developer ID keeps it across updates.
 
 ---
 
