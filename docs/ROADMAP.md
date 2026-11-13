@@ -59,7 +59,7 @@ Everything else builds on these two tickets. Merge them to `main` before startin
   - [ ] `tauri dev` opens a window with the empty three-column layout on macOS and
     Windows.
   - [ ] CI is green.
-  - [ ] Build, test and run commands are added to `CLAUDE.md` and the README's
+  - [x] Build, test and run commands are added to `CLAUDE.md` and the README's
     Development section.
 
 ### F2: Contracts and stubs

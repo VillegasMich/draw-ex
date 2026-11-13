@@ -6,13 +6,39 @@ real _Yu-Gi-Oh!_ duel with side panels of the cards the DRAW 2 models recognize.
 before any design-level change, and update it in the same change whenever a decision
 moves.
 
-Status: design phase, no code yet. When you add the scaffold, put build, test and run
-commands here.
+Status: workspace scaffold (F1) in place: empty crates, Tauri shell, static three-column
+layout. No recognition, tracking or card data yet.
 
 Implementing a ticket: read its entry in `docs/ROADMAP.md` first, and change only the
 paths listed under its **Owns**. Its **Done when** list is the merge bar.
 
-## Layout (planned)
+## Commands
+
+Prerequisites: rustup (the toolchain is pinned in `rust-toolchain.toml` and installs
+itself), Node.js LTS, pnpm (version pinned in `package.json` `packageManager`), and the
+Tauri v2 OS prerequisites. Run everything from the repo root.
+
+- Install: `pnpm install`
+- Run the app: `pnpm tauri dev`. The dev server port defaults to 1420; set
+  `DRAW_EX_DEV_PORT` to use another one (`DRAW_EX_DEV_PORT=1425 pnpm tauri dev`). Vite
+  reads it in `vite.config.ts`, and `scripts/tauri.js` passes the matching `devUrl` to
+  `tauri dev` via `--config`. Both use `scripts/dev-port.js`.
+- Frontend only (browser, no Tauri): `pnpm dev`
+- Checks (CI runs all of them, on macOS and Windows):
+  - `cargo fmt --all --check`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
+  - `pnpm check` (svelte-check + `tsc` for the Node-side config files)
+  - `pnpm lint` (ESLint)
+  - `pnpm format:check` (Prettier; `pnpm format` fixes. Markdown is excluded)
+  - `pnpm test` (Vitest)
+- Build: `pnpm build` (frontend into `dist/`), then `cargo build --workspace`.
+  Installers are not set up yet (ticket R1).
+
+TypeScript is pinned to `~6.0` because `typescript-eslint` and `svelte-check` do not
+support TypeScript 7 yet. Lift the pin when their peer ranges do.
+
+## Layout
 
 - `crates/tracker/`: tracks, voting, confirmation, player assignment. No Tauri
   dependency.
