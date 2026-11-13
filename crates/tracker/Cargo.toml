@@ -1,0 +1,11 @@
+[package]
+name = "tracker"
+description = "Tracks, voting, confirmation and player assignment for draw-ex."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
