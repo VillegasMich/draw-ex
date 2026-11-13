@@ -112,3 +112,17 @@ needed an emergency fix for exactly this. So:
 
 AGPL-3.0, inherited from DRAW 2. Code from draw2 is fine; code copied from projects with
 incompatible licenses is not.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `VillegasMich/draw-ex`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root, created as terms and decisions are resolved. See `docs/agents/domain.md`.
