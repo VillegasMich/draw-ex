@@ -354,6 +354,5 @@ pinned git dependency.
 
 ## License
 
-[GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html), the
-same as DRAW 2, which this app links through `draw-core`. A `LICENSE` file will be added with the
-first code.
+[GNU Affero General Public License v3.0](LICENSE), the same as DRAW 2, which this app
+links through `draw-core`.

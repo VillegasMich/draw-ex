@@ -52,7 +52,7 @@ Everything else builds on these two tickets. Merge them to `main` before startin
 - **Scope**:
   - Cargo workspace, Tauri v2 app (`src-tauri/`), Svelte 5 + TypeScript + Vite (`src/`).
   - Empty library crates `crates/tracker` and `crates/card-db`.
-  - `.gitignore` (including `.cargo/config.toml`), AGPL-3.0 `LICENSE`.
+  - `.gitignore` (including `.cargo/config.toml`).
   - GitHub Actions CI on macOS + Windows: `cargo fmt --check`,
     `cargo clippy -- -D warnings`, `cargo test`, frontend typecheck + lint.
 - **Done when**:
