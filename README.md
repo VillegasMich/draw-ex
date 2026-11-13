@@ -242,6 +242,7 @@ settings.json
 ```
 Cargo.toml          workspace; depends on draw-core (git, pinned)
 crates/
+  domain/           shared IDs and geometry: passcode, camera, player, point, quad
   tracker/          tracks, voting, confirmation, player assignment
   card-db/          YGOPRODeck client, SQLite store, image cache, rate limiter
 src-tauri/          Tauri app: commands, state, model download, packaging config

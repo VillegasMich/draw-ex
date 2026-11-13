@@ -22,8 +22,8 @@ covers only order, ownership and done-criteria.
   implementations, so no Phase 1 ticket waits on another stream's real code.
 
 ```
-Phase 0  F1 ─► F2
-               │
+Phase 0  F1 ─► F2a ─► F2b
+                      │
 Phase 1        ├─ A1 ─┐
   (parallel)   ├─ A2 ─┴─► A3                          draw2 fork
                ├─ B1 ─► B2      B3                    card-db
@@ -63,27 +63,117 @@ Everything else builds on these two tickets. Merge them to `main` before startin
     Development section.
 
 ### F2: Contracts and stubs
-- **Repos**: draw2 + draw-ex. **Branch**: `feat/contracts` in both.
-- **Depends on**: F1.
+
+F2 is split into two tickets because draw-ex pins a draw2 tag: **F2a blocks F2b**.
+Vocabulary is defined in [`GLOSSARY.md`](../GLOSSARY.md). The boundaries are recorded in
+[ADR-0001](adr/0001-recognition-lives-in-draw2.md),
+[ADR-0002](adr/0002-domain-crate-and-tracker-input.md) and
+[ADR-0003](adr/0003-frame-transport.md).
+
+Contract rules for both tickets:
+
+- Units and spaces:
+  - coordinates are `f32` source-frame pixels;
+  - passcodes are integers;
+  - scores and confidences are 0–1;
+  - timestamps are milliseconds as `f64` from the frontend's `performance.now()`.
+- Every public item's doc comment states the unit or coordinate space it uses.
+
+#### F2a: draw-core stub (draw2)
+- **Repo**: draw2. **Branch**: `feat/contracts`. **Depends on**: F1.
+- **Owns**:
+  - the root `Cargo.toml` and `rust-toolchain.toml`, `crates/draw-core/`;
+  - `.github/workflows/rust.yml`, a minimal draw2 `CLAUDE.md`, and Rust entries in
+    `.gitignore`.
 - **Scope**:
-  - **draw2**: new crate `crates/draw-core` with the public API only:
-    - `Recognizer` (`new(model_paths, options)`, `recognize(frame) -> Vec<Detection>`);
-    - `Frame` (RGBA view + dimensions), `Detection` (4 corners, detector confidence,
-      status, top-k `Candidate { passcode: u32, score }`, best match);
-    - `RecognizerOptions` (deck passcodes, thresholds);
-    - `ModelManifest` (variants, files, revision, sha256).
-    - A `FakeRecognizer` returns canned detections. Tag `draw-core-v0.0.1`.
-  - **draw-ex**:
-    - Depend on `draw-core-v0.0.1`.
-    - Add the IPC module `src-tauri/src/ipc/`: every command and event the app will use
-      (submit frame, detections, track events, card lookup, settings, model download
-      progress, cache stats), with stub handlers. Generate the TS bindings with
-      `tauri-specta`.
-    - Add public API signatures for `card-db` (`CardDb`, `ImageCache`, `Deck`) and
-      `tracker` (`Tracker`, `TrackEvent`, `PlayerAssignment`, `DuelLog`), with `todo!()`
-      bodies or in-memory fakes.
-    - Pre-create one empty module per Phase 1 ticket (see [Conflict
-      hotspots](#conflict-hotspots)).
+  - A Rust workspace alongside the untouched Python project. Rust 1.100.0, edition
+    2024.
+  - `rust.yml`: fmt, clippy `-D warnings` and test on macOS + Windows, run when
+    `crates/**` or the Cargo files change.
+  - Public API only:
+    - `FrameRef<'a> { width, height, rgba }`: tightly packed RGBA8, row-major. The
+      constructor validates the length.
+    - `trait Recognize: Send { fn recognize(&mut self, frame: FrameRef<'_>) -> Result<Vec<Detection>, RecognizeError> }`.
+    - `Recognizer::new(model_paths, options)`: returns a "not implemented" error in the
+      stub.
+    - `RecognizerOptions`: deck list passcodes, detector and score thresholds, top-k,
+      model variant.
+    - `Detection { quad, detector_confidence, candidates, recognition }`:
+      - `quad`: corners top-left, top-right, bottom-right, bottom-left of the card read
+        upright;
+      - `candidates`: top-k sorted by score, highest first;
+      - `recognition`: `Recognized(Candidate) | LowConfidence | NotInDeck | Unreadable`.
+    - `Candidate { passcode: Passcode, score }`, with `Passcode(u32)`.
+    - `ModelManifest` with **real pinned data**:
+      - the HF repo and commit;
+      - per `ModelVariant` (`Fp32 | Fp16 | Int8 | YugiscanInt8`), the files with sha256
+        and size.
+    - `FakeRecognizer` behind cargo feature `fake`: returns configured detections,
+      optionally after a configured delay.
+  - Merge with a merge commit, then the coordinator tags `draw-core-v0.0.1`.
+- **Test seams**:
+  - `FrameRef::new` rejects a buffer whose length doesn't match the dimensions;
+  - `FakeRecognizer` returns its detections and honours its delay;
+  - `Recognizer::new` returns the "not implemented" error;
+  - every manifest variant has files, each with a 64-hex sha256 and a nonzero size.
+- **Done when**:
+  - [ ] `cargo fmt/clippy/test` pass locally and in `rust.yml` on macOS + Windows.
+  - [ ] Tag `draw-core-v0.0.1` exists on draw2 `main`.
+
+#### F2b: Contracts in draw-ex
+- **Repo**: draw-ex. **Branch**: `feat/contracts`. **Depends on**: F2a (tag).
+- **Owns**:
+  - `Cargo.toml`, `crates/domain/` (new), `crates/tracker/src/lib.rs`,
+    `crates/card-db/src/lib.rs`;
+  - `src-tauri/`, `src/lib/` (bindings and the `submit_frame` wrapper), and the empty
+    module stubs listed below;
+  - `.github/workflows/ci.yml` (bindings check).
+- **Scope**:
+  - Depend on `draw-core` at tag `draw-core-v0.0.1`, with feature `fake`.
+  - **`crates/domain`**: `Passcode(u32)`, `CameraId`, `Player { A, B }`, `Point`,
+    `Quad`, all serde with camelCase keys.
+  - **`tracker` public API** (it never depends on draw-core):
+    - `Observation` (camera, quad, candidates, time), `Tracker`, `TrackEvent`
+      (`Confirmed | Changed | Lost`, with player and passcode);
+    - `CameraSetup` (`OneSide { player } | SplitLine { line } | TwoCameras { a, b }`);
+    - `SplitLine { from, to }`: Player A is on the left of `from → to` as seen on
+      screen. The default is a horizontal line through the middle, drawn right to left,
+      so Player A is at the bottom.
+    - `DuelLog`.
+    - All bodies are `todo!()`.
+  - **`card-db` public API**: `CardDb`, `Card`, `Language` (`En | Fr | De | It | Pt`),
+    `ImageCache`, `ImageSize` (`Full | Small | Cropped`), `Deck`, with `thiserror`
+    errors. All bodies are `todo!()`.
+  - **IPC** in `src-tauri/src/ipc/`, with stub handlers returning canned data. They
+    **never call the crates**.
+    - **Commands**:
+      - `submit_frame`: raw RGBA body plus headers for camera, width, height and
+        timestamp. The response is the detections. It has a hand-written typed wrapper
+        in `src/lib/`.
+      - `set_camera_setup`, `start_session`, `end_session`, `get_card(passcode, language)`.
+      - `list_decks`, `import_deck(path)`, `select_deck(id?)`.
+      - `get_settings`, `update_settings`, `model_status`, `download_models(variant)`.
+      - `cache_stats`, `clear_cache(kind)`, `sync_card_db`.
+    - **Events**: `track-event`, `model-download-progress`, `card-db-sync-progress`.
+    - **Settings**: language, model variant, inference fps (default 6), selected deck
+      (optional), image cache cap in MB (default 1024).
+    - **Card image URL format**: `cardimg://<size>/<passcode>`. Only the format is
+      defined here; I1 serves it.
+  - **Bindings**: `tauri-specta` exports `src/lib/bindings.ts` from a `cargo test` in
+    `src-tauri`. The file is committed, and CI fails if it changes after `cargo test`.
+  - **Pre-created empty modules**, one per Phase 1 ticket (see [Conflict
+    hotspots](#conflict-hotspots)):
+    - `crates/card-db/src/{client,limiter,db,sync,images,deck}`;
+    - `crates/tracker/src/{track,vote,players,log}`;
+    - `src-tauri/src/{pipeline,models,settings}`;
+    - `src/{camera,layout,frames,overlay,panels,settings}`.
+- **Test seams**:
+  - every command handler returns its fake data through Tauri's mock runtime
+    (`tauri::test`);
+  - `submit_frame` rejects missing or invalid headers and a wrong body length;
+  - `domain` and IPC types round-trip through serde with camelCase keys;
+  - CI fails when `bindings.ts` is stale;
+  - `pnpm check` type-checks a TS file that calls every command through the bindings.
 - **Done when**:
   - [ ] draw-ex builds against the stub.
   - [ ] The frontend can call every command through the generated bindings and receives
@@ -176,7 +266,7 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
 #### C1: Tracks, voting, confirmation
 - **Branch**: `feat/tracker-core`. **Owns**: `crates/tracker/src/{track,vote}/`.
 - **Scope**:
-  - Per-camera association of detections to tracks, by box overlap and center distance.
+  - Per-camera association of observations to tracks, by quad overlap and center distance.
   - A weighted vote over candidates.
   - A confirmation rule (minimum votes + margin) and a grace period before closing a
     track.
@@ -216,7 +306,7 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
 - **Scope**:
   - Grab frames at a configurable rate and send RGBA over binary IPC.
   - Keep at most one frame in flight per camera and drop the rest.
-  - The Rust handler runs `Recognizer` (the fake from F2) on a worker thread and emits
+  - The Rust handler runs a `Recognize` impl (`FakeRecognizer` from F2a) on a worker thread and emits
     detections tagged with the frame timestamp.
 - **Done when**:
   - [ ] With a recognizer that sleeps 500 ms, the preview stays at full fps, no frames

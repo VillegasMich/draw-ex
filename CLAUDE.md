@@ -40,8 +40,13 @@ support TypeScript 7 yet. Lift the pin when their peer ranges do.
 
 ## Layout
 
+Domain terms are defined in `GLOSSARY.md`; boundary decisions are in `docs/adr/`.
+
+- `crates/domain/`: shared IDs and geometry (passcode, camera, player, point, quad). No
+  dependencies on the other crates.
 - `crates/tracker/`: tracks, voting, confirmation, player assignment. No Tauri
-  dependency.
+  dependency. It takes its own `Observation` input and **never depends on draw-core**
+  (ADR-0002).
 - `crates/card-db/`: YGOPRODeck client, SQLite store, image cache. No Tauri dependency.
 - `src-tauri/`: the app shell. Keep commands thin and put the logic in the crates.
 - `src/`: Svelte 5 + TypeScript frontend. The IPC types come from `tauri-specta`:
