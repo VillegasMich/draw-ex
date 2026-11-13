@@ -6,7 +6,9 @@ real-life _Yu-Gi-Oh!_ duel. The camera footage sits in the center of the window;
 panels show the cards the [DRAW 2](https://github.com/HichTala/draw2) model recognizes on
 the table, with their artwork, type, stats and effect text.
 
-> **Status:** design phase. This README records the agreed design; no code exists yet.
+> **Status:** early implementation. The workspace scaffold is in place (see
+> [Development](#development)); recognition, tracking and card data are not built yet.
+> This README records the agreed design.
 
 ---
 
@@ -43,7 +45,7 @@ the table, with their artwork, type, stats and effect text.
 | Area | Technology | Why |
 |---|---|---|
 | App shell and packaging | [Tauri v2](https://v2.tauri.app/) | Rust backend + web UI; bundles Windows NSIS `.exe` and macOS `.dmg`; CI zips the portable builds |
-| Backend language | Rust (stable), `tokio` async runtime | Performance for inference and I/O; Tauri's native language |
+| Backend language | Rust (stable, pinned in `rust-toolchain.toml`, edition 2024), `tokio` async runtime | Performance for inference and I/O; Tauri's native language |
 | Frontend | [Svelte 5](https://svelte.dev/) + TypeScript + Vite | Small, fast reactive panels; polished overlay with web tech |
 | IPC types | [`tauri-specta`](https://github.com/specta-rs/tauri-specta) | Generates TS types and command wrappers from Rust, so frontend and backend cannot drift apart |
 | Camera capture | `getUserMedia` in the webview; `nokhwa` as fallback | Smooth native-rate preview; multiple cameras by device ID |
@@ -325,9 +327,45 @@ Developer ID keeps it across updates.
 
 ## Development
 
-Not set up yet. Planned prerequisites: Rust (stable), Node.js, and the
-[Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS. Commands
-will be documented here once the scaffold lands.
+**Prerequisites**
+
+- [rustup](https://rustup.rs/). The Rust version is pinned in `rust-toolchain.toml`
+  (with `rustfmt` and `clippy`); rustup installs it on the first `cargo` command.
+- [Node.js](https://nodejs.org/) LTS and [pnpm](https://pnpm.io/). The pnpm version is
+  pinned in `package.json` (`packageManager`).
+- The [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS
+  (Xcode Command Line Tools on macOS; MSVC build tools and WebView2 on Windows).
+
+**Run**
+
+```sh
+pnpm install
+pnpm tauri dev                          # dev server on port 1420
+DRAW_EX_DEV_PORT=1425 pnpm tauri dev    # any other port
+```
+
+`DRAW_EX_DEV_PORT` moves both the Vite dev server (`vite.config.ts`) and the URL the
+Tauri window loads (`scripts/tauri.js` passes it to `tauri dev` with `--config`), so
+several checkouts can run side by side.
+
+**Checks** (CI runs these on macOS and Windows for every pull request)
+
+```sh
+cargo fmt --all --check
+pnpm build                                        # frontend dist for the Tauri build
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+pnpm check          # svelte-check + tsc
+pnpm lint           # ESLint
+pnpm format:check   # Prettier (pnpm format to fix; Markdown is not formatted)
+pnpm test           # Vitest
+cargo build --workspace
+```
+
+Installers and portable builds are not set up yet (ticket R1 in the roadmap).
+
+TypeScript is pinned to `~6.0` until `typescript-eslint` and `svelte-check` support
+TypeScript 7.
 
 **Working on draw-core and draw-ex together**: clone the draw2 fork next to this repo
 (`../draw2`) and point Cargo at the local copy. Use a `.cargo/config.toml`, which is

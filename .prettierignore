@@ -1,0 +1,10 @@
+# Generated or binary
+pnpm-lock.yaml
+dist/
+target/
+src-tauri/gen/
+src-tauri/icons/
+
+# Hand-wrapped prose: Prettier pads tables and re-indents checklist items
+*.md
+LICENSE
