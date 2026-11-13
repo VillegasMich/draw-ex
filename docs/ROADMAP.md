@@ -281,10 +281,17 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
 - **Scope**:
   - Tag-triggered GitHub Actions builds of the Windows NSIS `.exe` and the macOS `.dmg`
     (arm64 + x64).
-  - ONNX Runtime libraries inside the bundles.
+  - Portable downloads, built in the same job:
+    - Windows: a `.zip` with the app `.exe` plus the ONNX Runtime/DirectML DLLs;
+    - macOS: a `.zip` of the `.app`, made with `ditto -c -k --keepParent` so bundle
+      attributes and signatures survive.
+  - ONNX Runtime libraries inside every artifact.
+  - All artifacts attached to a GitHub Release.
 - **Done when**:
-  - [ ] Installers from CI run on clean macOS and Windows machines, with no dev tools
-    installed, through first-run download to live recognition.
+  - [ ] Every artifact (installer and portable, per platform) runs on a clean macOS or
+    Windows machine with no dev tools installed, through first-run download to live
+    recognition.
+  - [ ] The Windows portable `.exe` starts from any folder, including a USB drive.
 
 #### R2: Signing (optional)
 - **Only needed** for public distribution to non-technical users; see the README's

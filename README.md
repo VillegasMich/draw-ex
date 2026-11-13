@@ -1,6 +1,7 @@
 # draw-ex
 
-A desktop app (Windows `.exe`, macOS `.dmg`) that shows a live, augmented view of a
+A desktop app for Windows and macOS (installers plus portable downloads, see
+[Downloads](#downloads)) that shows a live, augmented view of a
 real-life _Yu-Gi-Oh!_ duel. The camera footage sits in the center of the window; the side
 panels show the cards the [DRAW 2](https://github.com/HichTala/draw2) model recognizes on
 the table, with their artwork, type, stats and effect text.
@@ -41,7 +42,7 @@ the table, with their artwork, type, stats and effect text.
 
 | Area | Technology | Why |
 |---|---|---|
-| App shell and packaging | [Tauri v2](https://v2.tauri.app/) | Rust backend + web UI; bundles Windows NSIS `.exe` and macOS `.dmg` |
+| App shell and packaging | [Tauri v2](https://v2.tauri.app/) | Rust backend + web UI; bundles Windows NSIS `.exe` and macOS `.dmg`; CI zips the portable builds |
 | Backend language | Rust (stable), `tokio` async runtime | Performance for inference and I/O; Tauri's native language |
 | Frontend | [Svelte 5](https://svelte.dev/) + TypeScript + Vite | Small, fast reactive panels; polished overlay with web tech |
 | IPC types | [`tauri-specta`](https://github.com/specta-rs/tauri-specta) | Generates TS types and command wrappers from Rust, so frontend and backend cannot drift apart |
@@ -277,6 +278,26 @@ and done-criteria. In short:
 - **Code signing**: only needed to distribute installers to other people (see
   [Distribution and signing](#distribution-and-signing)). Whether to pay for it is
   undecided.
+
+## Downloads
+
+Every release publishes four downloads for each platform architecture (macOS arm64 +
+x64, Windows x64):
+
+| Platform | Installer | Portable (no install) |
+|---|---|---|
+| **Windows** | NSIS setup `.exe`: Start-menu entry, uninstaller | `.zip` with the app `.exe` and the ONNX Runtime/DirectML DLLs. Unzip and run. Needs the WebView2 runtime, which ships with Windows 10/11 |
+| **macOS** | `.dmg`: drag to Applications | `.zip` with the `.app`. Unzip and run from anywhere |
+
+- **Both kinds behave the same.** Models, card data and images go to the OS app-data
+  directory (see [Data on disk](#data-on-disk)), so switching between installer and
+  portable keeps the cache.
+- **macOS portable is the `.app` bundle, not a bare binary.** Camera permission is
+  granted to an app bundle with its `Info.plist`; a bare binary would borrow Terminal's
+  camera permission instead.
+- **Portable builds still get the security warnings.** Windows and macOS mark downloaded
+  zips and apply the same SmartScreen and Gatekeeper checks to the files inside, so the
+  next section applies to both kinds.
 
 ## Distribution and signing
 
