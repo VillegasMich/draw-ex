@@ -1,0 +1,18 @@
+[package]
+name = "draw-ex"
+description = "Live camera view of a Yu-Gi-Oh! duel with the cards DRAW 2 recognizes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "draw_ex_lib"
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = [] }
