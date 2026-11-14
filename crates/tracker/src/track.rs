@@ -23,6 +23,7 @@ pub struct Observation {
     pub recognized: Option<Passcode>,
     /// When the frame was captured: milliseconds from the frontend's
     /// `performance.now()`.
+    #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub time_ms: f64,
 }
 
@@ -34,6 +35,7 @@ pub struct ObservedCandidate {
     /// The candidate card.
     pub passcode: Passcode,
     /// How likely the classifier finds this candidate, from 0 to 1.
+    #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub score: f32,
 }
 
@@ -66,6 +68,7 @@ pub enum TrackEvent {
         /// The confirmed card.
         passcode: Passcode,
         /// The observation time that confirmed it: milliseconds from `performance.now()`.
+        #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
         time_ms: f64,
     },
     /// A confirmed track's identity changed to a different card.
@@ -79,6 +82,7 @@ pub enum TrackEvent {
         /// The card it is confirmed as now.
         to: Passcode,
         /// The observation time of the change: milliseconds from `performance.now()`.
+        #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
         time_ms: f64,
     },
     /// A confirmed track went unseen for longer than the grace period and was closed.
@@ -90,6 +94,7 @@ pub enum TrackEvent {
         /// The card the track was confirmed as.
         passcode: Passcode,
         /// When the track was closed: milliseconds from `performance.now()`.
+        #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
         time_ms: f64,
     },
 }
@@ -103,8 +108,10 @@ pub struct TrackerConfig {
     pub min_votes: u32,
     /// Minimum lead of the leading passcode's vote weight over the runner-up's, as a
     /// fraction of the total vote weight, from 0 to 1.
+    #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub min_margin: f32,
     /// How long a track may go unseen before it is closed, in milliseconds.
+    #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub grace_ms: f64,
 }
 

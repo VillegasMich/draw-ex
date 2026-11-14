@@ -12,7 +12,8 @@
 //! - Passcodes are integers; leading zeros are not significant.
 //!
 //! Every type serializes with camelCase keys. With the `specta` cargo feature, every type
-//! also derives `specta::Type` for the TypeScript bindings.
+//! also derives `specta::Type` for the TypeScript bindings, and [`FiniteNumber`] is
+//! available to export float fields as a plain TypeScript `number`.
 
 #![forbid(unsafe_code)]
 
@@ -115,8 +116,10 @@ pub enum Player {
 #[serde(rename_all = "camelCase")]
 pub struct Point {
     /// Horizontal position, in source-frame pixels from the left edge.
+    #[cfg_attr(feature = "specta", specta(type = FiniteNumber))]
     pub x: f32,
     /// Vertical position, in source-frame pixels from the top edge.
+    #[cfg_attr(feature = "specta", specta(type = FiniteNumber))]
     pub y: f32,
 }
 
@@ -129,6 +132,39 @@ pub struct Point {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(transparent)]
 pub struct Quad(pub [Point; 4]);
+
+/// The TypeScript type of a float field that is always finite: exports as `number`.
+///
+/// specta exports every `f32`/`f64` as `number | null`, because serde_json writes `NaN`
+/// and infinities as `null`. The contract's coordinates, scores and times are always
+/// finite, so their fields use `#[specta(type = domain::FiniteNumber)]` instead.
+#[cfg(feature = "specta")]
+#[derive(Debug)]
+pub struct FiniteNumber;
+
+#[cfg(feature = "specta")]
+impl specta::Type for FiniteNumber {
+    fn definition(_: &mut specta::Types) -> specta::datatype::DataType {
+        use specta::datatype::{DataType, Enum, Field, Primitive, Variant};
+
+        // The same shape specta gives `serde_json::Number`, minus its integer variants:
+        // an untagged number marked finite, which specta-typescript renders as `number`.
+        let mut number = Enum::default();
+        number.variants.push((
+            "f64".into(),
+            Variant::unnamed()
+                .field(Field::new(DataType::Primitive(Primitive::f64)))
+                .build(),
+        ));
+        number
+            .attributes
+            .insert(specta::markers::SERDE_CONTAINER_UNTAGGED, true);
+        number
+            .attributes
+            .insert(specta::markers::FINITE_NUMBER_MARKER, true);
+        DataType::Enum(number)
+    }
+}
 
 #[cfg(test)]
 mod tests {

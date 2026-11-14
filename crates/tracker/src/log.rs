@@ -24,6 +24,7 @@ pub struct SessionInfo {
     /// When the operator started the session: **wall-clock** milliseconds since the Unix
     /// epoch. This is the one time in the contract that is not from `performance.now()`,
     /// because the log must record when the duel happened.
+    #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub started_at_ms: f64,
 }
 
