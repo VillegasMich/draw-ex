@@ -9,7 +9,11 @@ use serde::{Deserialize, Serialize};
 /// `{ "kind": "splitLine", "camera", "line" }` or `{ "kind": "twoCameras", "a", "b" }`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum CameraSetup {
     /// One camera on one player's side: every card it sees belongs to `player`.
     OneSide {
@@ -59,7 +63,10 @@ impl SplitLine {
         // Frame sizes are far below 2^24 pixels, so the f32 conversion is exact.
         let (width, middle) = (width as f32, height as f32 / 2.0);
         Self {
-            from: Point { x: width, y: middle },
+            from: Point {
+                x: width,
+                y: middle,
+            },
             to: Point { x: 0.0, y: middle },
         }
     }

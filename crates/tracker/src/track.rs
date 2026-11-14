@@ -51,7 +51,11 @@ pub struct TrackId(pub u64);
 /// `{ "kind": "confirmed", "track": 1, "player": "a", "passcode": 83764719, "timeMs": 1234.5 }`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum TrackEvent {
     /// A track gathered enough consistent evidence to become a confirmed card.
     Confirmed {

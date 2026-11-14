@@ -213,7 +213,10 @@ mod tests {
     fn player_serializes_as_camel_case_names() {
         assert_eq!(serde_json::to_value(Player::A).unwrap(), json!("a"));
         assert_eq!(serde_json::to_value(Player::B).unwrap(), json!("b"));
-        assert_eq!(serde_json::from_value::<Player>(json!("b")).unwrap(), Player::B);
+        assert_eq!(
+            serde_json::from_value::<Player>(json!("b")).unwrap(),
+            Player::B
+        );
     }
 
     #[test]
