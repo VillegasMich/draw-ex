@@ -175,10 +175,10 @@ Contract rules for both tickets:
   - CI fails when `bindings.ts` is stale;
   - `pnpm check` type-checks a TS file that calls every command through the bindings.
 - **Done when**:
-  - [ ] draw-ex builds against the stub.
-  - [ ] The frontend can call every command through the generated bindings and receives
+  - [x] draw-ex builds against the stub.
+  - [x] The frontend can call every command through the generated bindings and receives
     fake data.
-  - [ ] The API doc comments state units and coordinate spaces: frame pixels, passcode as
+  - [x] The API doc comments state units and coordinate spaces: frame pixels, passcode as
     an integer, score in 0–1.
 
 ---

@@ -240,13 +240,15 @@ settings.json
 ## Planned repository layout
 
 ```
-Cargo.toml          workspace; depends on draw-core (git, pinned)
+Cargo.toml          workspace
 crates/
   domain/           shared IDs and geometry: passcode, camera, player, point, quad
   tracker/          tracks, voting, confirmation, player assignment
   card-db/          YGOPRODeck client, SQLite store, image cache, rate limiter
-src-tauri/          Tauri app: commands, state, model download, packaging config
-src/                frontend (TypeScript + Vite)
+src-tauri/          Tauri app: IPC commands, state, model download, packaging config;
+                    the only crate that depends on draw-core (git, pinned)
+src/                frontend (Svelte + TypeScript + Vite); src/lib/bindings.ts is
+                    generated from src-tauri/src/ipc
 
 draw2 fork (separate repo)
 crates/draw-core/   inference pipeline + model manifest + golden tests
@@ -355,7 +357,8 @@ several checkouts can run side by side.
 cargo fmt --all --check
 pnpm build                                        # frontend dist for the Tauri build
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --workspace                            # also regenerates src/lib/bindings.ts
+git diff --exit-code src/lib/bindings.ts          # the committed bindings are up to date
 pnpm check          # svelte-check + tsc
 pnpm lint           # ESLint
 pnpm format:check   # Prettier (pnpm format to fix; Markdown is not formatted)
