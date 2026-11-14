@@ -1,0 +1,21 @@
+[package]
+name = "domain"
+description = "Identifiers and geometry shared by the draw-ex crates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# Derives `specta::Type` so the app shell can export these types to TypeScript.
+specta = ["dep:specta"]
+
+[dependencies]
+serde.workspace = true
+specta = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
