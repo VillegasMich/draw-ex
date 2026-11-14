@@ -348,6 +348,9 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - Pin `draw-core-v0.1.0`.
   - Replace the fakes with draw-core, `tracker` and `card-db`.
   - Serve card images to the webview from the local cache through a custom protocol.
+    On Windows, WebView2 serves custom schemes as `http://cardimg.localhost/...`
+    rather than `cardimg://...`, so `cardImageUrl` in `src/lib/card-image.ts` needs a
+    per-platform form.
 - **Done when**:
   - [ ] Playing `sample_video.mp4` as the source shows its cards confirmed in the
     correct player's panel, with artwork, after first-run setup.
