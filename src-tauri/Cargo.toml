@@ -15,4 +15,19 @@ name = "draw_ex_lib"
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
+card-db = { workspace = true, features = ["specta"] }
+domain = { workspace = true, features = ["specta"] }
+# Recognition (ADR-0001). Only this crate may depend on draw-core (ADR-0002).
+draw-core = { git = "https://github.com/VillegasMich/draw2", tag = "draw-core-v0.0.1", features = ["fake"] }
+serde.workspace = true
+serde_json.workspace = true
+specta.workspace = true
+# specta-typescript and tauri-specta are rcs: pin them exactly, with specta.
+specta-typescript = "=0.0.15"
 tauri = { version = "2.12.5", features = [] }
+tauri-specta = { version = "=2.0.0-rc.29", features = ["derive", "typescript"] }
+thiserror.workspace = true
+tracker = { workspace = true, features = ["specta"] }
+
+[dev-dependencies]
+tauri = { version = "2.12.5", features = ["test"] }
