@@ -4,10 +4,10 @@
 //! recognition in draw-core. Every module below is registered here once; Phase 1
 //! tickets change only the inside of their own module.
 
-pub mod ipc;
-pub mod models;
-pub mod pipeline;
-pub mod settings;
+mod ipc;
+mod models;
+mod pipeline;
+mod settings;
 
 /// Starts the Tauri application and blocks until it exits.
 ///

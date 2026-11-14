@@ -441,7 +441,7 @@ export type SessionSummary = {
 	confirmedCount: number,
 	/**
 	 *  Where the session's duel log was saved: an absolute path under the app's data
-	 *  directory, for the operator to open.
+	 *  directory, for the operator to open. The stub returns a relative placeholder.
 	 */
 	logPath: string,
 };

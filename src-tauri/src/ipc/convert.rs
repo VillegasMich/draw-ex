@@ -9,11 +9,13 @@ use draw_core::ModelVariant;
 use super::types::{CandidateDto, DetectionDto, ModelVariantDto, RecognitionDto};
 
 /// Maps a draw-core passcode to the domain one. Same integer, same meaning.
+#[must_use]
 pub fn passcode(passcode: draw_core::Passcode) -> domain::Passcode {
     domain::Passcode(passcode.0)
 }
 
 /// Maps a draw-core quad to the domain one. Same corners, order and pixel space.
+#[must_use]
 pub fn quad(quad: draw_core::Quad) -> domain::Quad {
     domain::Quad(quad.0.map(|p| domain::Point { x: p.x, y: p.y }))
 }

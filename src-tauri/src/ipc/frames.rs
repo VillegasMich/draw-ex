@@ -108,8 +108,9 @@ pub fn submit_frame(request: Request<'_>) -> Result<Vec<DetectionDto>, IpcError>
 
     let mut recognizer =
         FakeRecognizer::new(canned::detections(frame.width(), frame.height()), None);
+    // Recognition errors can name model files, so their text stays on the Rust side.
     let detections = recognizer
         .recognize(frame)
-        .map_err(|e| IpcError::new(IpcErrorKind::Internal, e.to_string()))?;
+        .map_err(|_| IpcError::new(IpcErrorKind::Internal, "recognition failed on this frame"))?;
     Ok(detections.into_iter().map(DetectionDto::from).collect())
 }

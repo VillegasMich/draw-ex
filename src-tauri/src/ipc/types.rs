@@ -182,7 +182,7 @@ pub struct SessionSummary {
     /// Number of `confirmed` track events in the session.
     pub confirmed_count: u32,
     /// Where the session's duel log was saved: an absolute path under the app's data
-    /// directory, for the operator to open.
+    /// directory, for the operator to open. The stub returns a relative placeholder.
     pub log_path: String,
 }
 
@@ -202,6 +202,7 @@ pub struct IpcError {
 
 impl IpcError {
     /// Creates an error of `kind` with `message`.
+    #[must_use]
     pub fn new(kind: IpcErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,

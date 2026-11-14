@@ -11,9 +11,9 @@ use super::types::{
     CacheStats, DeckSummary, ModelStatus, ModelVariantDto, SessionSummary, VariantStatus,
 };
 
-pub const MONSTER_REBORN: u32 = 83_764_719;
-pub const ASH_BLOSSOM: u32 = 14_558_127;
-pub const POT_OF_GREED: u32 = 55_144_522;
+pub const MONSTER_REBORN: Passcode = Passcode(83_764_719);
+pub const ASH_BLOSSOM: Passcode = Passcode(14_558_127);
+pub const POT_OF_GREED: Passcode = Passcode(55_144_522);
 
 pub const SESSION_ID: &str = "canned-session";
 /// 2026-11-14T15:52:00Z, in wall-clock milliseconds since the Unix epoch.
@@ -23,9 +23,10 @@ pub const DECK_ID: &str = "canned-deck";
 /// The variant the stubs report as installed and in use.
 pub const CURRENT_VARIANT: ModelVariant = ModelVariant::Fp16;
 
-fn candidate(passcode: u32, score: f32) -> Candidate {
+/// A draw-core candidate, as the fake recognizer returns it.
+fn candidate(passcode: Passcode, score: f32) -> Candidate {
     Candidate {
-        passcode: draw_core::Passcode(passcode),
+        passcode: draw_core::Passcode(passcode.0),
         score,
     }
 }
@@ -89,7 +90,7 @@ pub fn detections(width: u32, height: u32) -> Vec<Detection> {
 
 /// The English card data of the three canned cards, or `None` for any other passcode.
 pub fn card(passcode: Passcode) -> Option<Card> {
-    let card = match passcode.0 {
+    let card = match passcode {
         MONSTER_REBORN => Card {
             passcode,
             name: "Monster Reborn".into(),
