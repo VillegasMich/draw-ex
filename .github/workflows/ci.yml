@@ -54,8 +54,12 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Also regenerates src/lib/bindings.ts from the IPC module.
       - name: cargo test
         run: cargo test --workspace
+
+      - name: TypeScript bindings are up to date
+        run: git diff --exit-code src/lib/bindings.ts
 
       - name: svelte-check
         run: pnpm check
