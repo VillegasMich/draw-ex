@@ -175,10 +175,10 @@ Contract rules for both tickets:
   - CI fails when `bindings.ts` is stale;
   - `pnpm check` type-checks a TS file that calls every command through the bindings.
 - **Done when**:
-  - [ ] draw-ex builds against the stub.
-  - [ ] The frontend can call every command through the generated bindings and receives
+  - [x] draw-ex builds against the stub.
+  - [x] The frontend can call every command through the generated bindings and receives
     fake data.
-  - [ ] The API doc comments state units and coordinate spaces: frame pixels, passcode as
+  - [x] The API doc comments state units and coordinate spaces: frame pixels, passcode as
     an integer, score in 0–1.
 
 ---
@@ -348,6 +348,9 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - Pin `draw-core-v0.1.0`.
   - Replace the fakes with draw-core, `tracker` and `card-db`.
   - Serve card images to the webview from the local cache through a custom protocol.
+    On Windows, WebView2 serves custom schemes as `http://cardimg.localhost/...`
+    rather than `cardimg://...`, so `cardImageUrl` in `src/lib/card-image.ts` needs a
+    per-platform form.
 - **Done when**:
   - [ ] Playing `sample_video.mp4` as the source shows its cards confirmed in the
     correct player's panel, with artwork, after first-run setup.
