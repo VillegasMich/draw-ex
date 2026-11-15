@@ -233,9 +233,26 @@ impl Tracker {
     /// Closes tracks unseen for longer than the grace period as of `now_ms`
     /// (milliseconds from `performance.now()`), and returns their
     /// [`TrackEvent::Lost`] events.
+    ///
+    /// Unconfirmed tracks are closed silently. Events come in order of track ID.
     pub fn tick(&mut self, now_ms: f64) -> Vec<TrackEvent> {
-        let _ = now_ms;
-        Vec::new()
+        let grace_ms = self.config.grace_ms;
+        let mut events = Vec::new();
+        self.tracks.retain(|track| {
+            if now_ms - track.last_seen_ms <= grace_ms {
+                return true;
+            }
+            if let Some((player, passcode)) = track.confirmed {
+                events.push(TrackEvent::Lost {
+                    track: track.id,
+                    player,
+                    passcode,
+                    time_ms: now_ms,
+                });
+            }
+            false
+        });
+        events
     }
 
     /// The index of the open track `observation` continues, if any.
@@ -684,6 +701,61 @@ mod tests {
                     time_ms: 700.0,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn removed_confirmed_card_is_lost_after_two_seconds_unseen() {
+        let mut tracker = one_side_tracker();
+        let quad = card_at(200.0, 300.0);
+        let reborn = Some(MONSTER_REBORN);
+        observe_sequence(&mut tracker, quad, 0.0, &[reborn, reborn, reborn]);
+
+        // Last seen at 200 ms.
+        assert_eq!(
+            tracker.tick(2200.0),
+            [],
+            "not unseen for longer than 2 s yet"
+        );
+        assert_eq!(
+            tracker.tick(2201.0),
+            [TrackEvent::Lost {
+                track: TrackId(1),
+                player: Player::A,
+                passcode: MONSTER_REBORN,
+                time_ms: 2201.0,
+            }]
+        );
+        assert_eq!(tracker.tick(5000.0), [], "a track is lost once");
+
+        // A card put back in the same place is a new track.
+        assert_eq!(
+            observe_sequence(&mut tracker, quad, 6000.0, &[reborn, reborn, reborn]),
+            [TrackEvent::Confirmed {
+                track: TrackId(2),
+                player: Player::A,
+                passcode: MONSTER_REBORN,
+                time_ms: 6200.0,
+            }]
+        );
+    }
+
+    #[test]
+    fn unconfirmed_track_vanishes_silently() {
+        let mut tracker = one_side_tracker();
+        let quad = card_at(200.0, 300.0);
+        observe_sequence(&mut tracker, quad, 0.0, &[Some(MONSTER_REBORN), None]);
+
+        assert_eq!(tracker.tick(2101.0), []);
+        // Had the track survived, these two votes would confirm it.
+        assert_eq!(
+            observe_sequence(
+                &mut tracker,
+                quad,
+                2200.0,
+                &[Some(MONSTER_REBORN), Some(MONSTER_REBORN)]
+            ),
+            []
         );
     }
 }
