@@ -90,6 +90,11 @@ A track whose identity has gathered enough consistent evidence to be shown to vi
 logged. Only confirmed cards reach the panels.
 _Avoid_: recognized card, detected card
 
+**Featured card**:
+The card shown large at the top of a player's panel: their most recently confirmed card,
+or one the operator picked from their list.
+_Avoid_: main card, highlighted card
+
 **Session**:
 One duel, from when the operator starts it to when they end it.
 _Avoid_: match, game, recording
