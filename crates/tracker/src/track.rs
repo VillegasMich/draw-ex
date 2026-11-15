@@ -189,14 +189,21 @@ impl Tracker {
     }
 
     /// Adds one observation and returns the events it caused, in order.
+    ///
+    /// An observation from a camera that is not part of the current [`CameraSetup`] is
+    /// ignored: it neither starts nor continues a track, and returns no events.
     pub fn observe(&mut self, observation: Observation) -> Vec<TrackEvent> {
+        // Computed for every observation, but only used if this one confirms the track:
+        // the player is decided at confirmation, from the latest position.
+        let Some(player) = player_for(&self.setup, &observation) else {
+            return Vec::new();
+        };
         let index = match self.matching_track(&observation) {
             Some(index) => index,
             None => self.start_track(&observation),
         };
 
         let config = self.config;
-        let player = player_for(&self.setup, &observation);
         let track = &mut self.tracks[index];
         track.quad = observation.quad;
         track.last_seen_ms = observation.time_ms;
@@ -375,12 +382,30 @@ fn vote_of(observation: &Observation) -> Option<Vote> {
     Some(Vote { passcode, score })
 }
 
-/// The player a card seen in `observation` belongs to under `setup`.
-fn player_for(setup: &CameraSetup, observation: &Observation) -> Player {
-    let _ = observation;
+/// The player a card seen in `observation` belongs to under `setup`, or `None` when the
+/// observation's camera is not part of `setup`.
+///
+/// Under a split line, the card's side is that of the center of the observation's
+/// axis-aligned bounds.
+fn player_for(setup: &CameraSetup, observation: &Observation) -> Option<Player> {
+    let camera = &observation.camera;
     match setup {
-        CameraSetup::OneSide { player, .. } => *player,
-        CameraSetup::SplitLine { .. } | CameraSetup::TwoCameras { .. } => Player::A,
+        CameraSetup::OneSide {
+            camera: only,
+            player,
+        } => (camera == only).then_some(*player),
+        CameraSetup::SplitLine { camera: only, line } => {
+            (camera == only).then(|| line.player_at(Bounds::of(&observation.quad).center()))
+        }
+        CameraSetup::TwoCameras { a, b } => {
+            if camera == a {
+                Some(Player::A)
+            } else if camera == b {
+                Some(Player::B)
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -756,6 +781,128 @@ mod tests {
                 &[Some(MONSTER_REBORN), Some(MONSTER_REBORN)]
             ),
             []
+        );
+    }
+
+    /// Observes `quad` from `cam` as Monster Reborn on three frames, 100 ms apart from
+    /// `start_ms`, and returns every event.
+    fn confirm_on(tracker: &mut Tracker, cam: &str, quad: Quad, start_ms: f64) -> Vec<TrackEvent> {
+        (0..3_u8)
+            .flat_map(|frame| {
+                let time_ms = start_ms + f64::from(frame) * 100.0;
+                tracker.observe(seen_by(cam, quad, Some(MONSTER_REBORN), time_ms))
+            })
+            .collect()
+    }
+
+    fn confirmed_player(events: &[TrackEvent]) -> Option<Player> {
+        match events {
+            [TrackEvent::Confirmed { player, .. }] => Some(*player),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn one_side_setup_gives_every_card_to_its_player_and_ignores_other_cameras() {
+        let mut tracker = Tracker::new(
+            TrackerConfig::default(),
+            CameraSetup::OneSide {
+                camera: camera("cam"),
+                player: Player::B,
+            },
+        );
+
+        let events = confirm_on(&mut tracker, "cam", card_at(200.0, 300.0), 0.0);
+        assert_eq!(confirmed_player(&events), Some(Player::B));
+
+        assert_eq!(
+            confirm_on(&mut tracker, "other", card_at(600.0, 300.0), 0.0),
+            [],
+            "observations from a camera not in the setup are ignored"
+        );
+    }
+
+    #[test]
+    fn split_line_setup_gives_each_card_to_the_half_its_center_is_in() {
+        // The default line for 1280 × 720: Player A has the bottom half.
+        let mut tracker = Tracker::new(
+            TrackerConfig::default(),
+            CameraSetup::SplitLine {
+                camera: camera("cam"),
+                line: crate::SplitLine::default_for(1280, 720),
+            },
+        );
+
+        let bottom = confirm_on(&mut tracker, "cam", card_at(600.0, 500.0), 0.0);
+        let top = confirm_on(&mut tracker, "cam", card_at(600.0, 50.0), 0.0);
+        // The quad straddles the line, but its center (y = 330) is in the top half.
+        let straddling = confirm_on(&mut tracker, "cam", card_at(200.0, 260.0), 0.0);
+
+        assert_eq!(confirmed_player(&bottom), Some(Player::A));
+        assert_eq!(confirmed_player(&top), Some(Player::B));
+        assert_eq!(confirmed_player(&straddling), Some(Player::B));
+        assert_eq!(
+            confirm_on(&mut tracker, "other", card_at(600.0, 500.0), 0.0),
+            [],
+            "observations from a camera not in the setup are ignored"
+        );
+    }
+
+    #[test]
+    fn two_cameras_setup_gives_each_card_to_its_camera_s_player() {
+        let mut tracker = Tracker::new(
+            TrackerConfig::default(),
+            CameraSetup::TwoCameras {
+                a: camera("left"),
+                b: camera("right"),
+            },
+        );
+
+        // The same position in both frames: tracks are kept per camera.
+        let quad = card_at(200.0, 300.0);
+        let from_a = confirm_on(&mut tracker, "left", quad, 0.0);
+        let from_b = confirm_on(&mut tracker, "right", quad, 0.0);
+
+        assert_eq!(confirmed_player(&from_a), Some(Player::A));
+        assert_eq!(confirmed_player(&from_b), Some(Player::B));
+        assert_eq!(
+            confirm_on(&mut tracker, "other", quad, 0.0),
+            [],
+            "observations from a camera not in the setup are ignored"
+        );
+    }
+
+    #[test]
+    fn new_setup_applies_to_tracks_confirmed_afterwards() {
+        let mut tracker = one_side_tracker();
+        let (first, second) = (card_at(100.0, 300.0), card_at(400.0, 300.0));
+        let events = confirm_on(&mut tracker, "cam", first, 0.0);
+        assert_eq!(confirmed_player(&events), Some(Player::A));
+
+        tracker.set_setup(CameraSetup::OneSide {
+            camera: camera("cam"),
+            player: Player::B,
+        });
+
+        let events = confirm_on(&mut tracker, "cam", second, 300.0);
+        assert_eq!(confirmed_player(&events), Some(Player::B));
+        assert_eq!(
+            tracker.tick(5000.0),
+            [
+                TrackEvent::Lost {
+                    track: TrackId(1),
+                    player: Player::A,
+                    passcode: MONSTER_REBORN,
+                    time_ms: 5000.0,
+                },
+                TrackEvent::Lost {
+                    track: TrackId(2),
+                    player: Player::B,
+                    passcode: MONSTER_REBORN,
+                    time_ms: 5000.0,
+                },
+            ],
+            "the earlier track keeps its player"
         );
     }
 }
