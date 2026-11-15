@@ -119,3 +119,139 @@ async fn sync_stores_english_card_data_that_get_returns() {
         ["/checkDBVer.php", "/cardinfo.php"]
     );
 }
+
+const POT_OF_GREED: Passcode = Passcode(55_144_522);
+
+fn ash_blossom_fr() -> Card {
+    Card {
+        name: "Floraison de Cendres et Joyeux Printemps".into(),
+        description: "Lorsqu'une carte ou un effet qui inclut n'importe lequel de ces effets \
+                      est activé (Effet Rapide) : vous pouvez défausser cette carte ; annulez \
+                      l'effet.\n\
+                      ●Ajouter une carte depuis le Deck à la main.\n\
+                      ●Invoquer Spécialement depuis le Deck.\n\
+                      ●Envoyer une carte depuis le Deck au Cimetière.\n\
+                      Vous ne pouvez utiliser cet effet de \"Floraison de Cendres et Joyeux \
+                      Printemps\" qu'une fois par tour."
+            .into(),
+        ..ash_blossom_en()
+    }
+}
+
+fn pot_of_greed_en() -> Card {
+    Card {
+        passcode: POT_OF_GREED,
+        name: "Pot of Greed".into(),
+        kind: "Spell Card".into(),
+        description: "Draw 2 cards.".into(),
+        attribute: None,
+        race: Some("Normal".into()),
+        level: None,
+        link_rating: None,
+        atk: None,
+        def: None,
+    }
+}
+
+#[tokio::test]
+async fn a_requested_language_is_synced_and_get_returns_its_fields() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+
+    db.request_language(Language::Fr).unwrap();
+    db.sync(|_| {}).await.unwrap();
+
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::Fr).unwrap(),
+        Some(ash_blossom_fr())
+    );
+    assert_eq!(
+        requests_to(&server).await,
+        [
+            "/checkDBVer.php",
+            "/cardinfo.php",
+            "/cardinfo.php?language=fr"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn get_falls_back_to_english_for_a_missing_translation_or_an_unsynced_language() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+
+    db.request_language(Language::Fr).unwrap();
+    db.sync(|_| {}).await.unwrap();
+
+    assert_eq!(
+        db.get(POT_OF_GREED, Language::Fr).unwrap(),
+        Some(pot_of_greed_en())
+    );
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::De).unwrap(),
+        Some(ash_blossom_en())
+    );
+}
+
+const DARK_MAGICIAN: Passcode = Passcode(46_986_414);
+/// An alternate artwork of Dark Magician (see `fixtures/README.md`).
+const DARK_MAGICIAN_ALT_ART: Passcode = Passcode(36_996_508);
+const DECODE_TALKER: Passcode = Passcode(1_861_629);
+
+#[tokio::test]
+async fn get_returns_link_rating_and_no_level_or_def_for_a_link_monster() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+
+    db.sync(|_| {}).await.unwrap();
+
+    assert_eq!(
+        db.get(DECODE_TALKER, Language::En).unwrap(),
+        Some(Card {
+            passcode: DECODE_TALKER,
+            name: "Decode Talker".into(),
+            kind: "Link Monster".into(),
+            description: "2+ Effect Monsters\r\nGains 500 ATK for each monster it points to. \
+                          When your opponent activates a card or effect that targets a \
+                          card(s) you control (Quick Effect): You can Tribute 1 monster this \
+                          card points to; negate the activation, and if you do, destroy that \
+                          card."
+                .into(),
+            attribute: Some("DARK".into()),
+            race: Some("Cyberse".into()),
+            level: None,
+            link_rating: Some(3),
+            atk: Some(2300),
+            def: None,
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_alternate_artwork_image_id_looks_up_the_card_it_belongs_to() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+
+    db.sync(|_| {}).await.unwrap();
+
+    let dark_magician = Card {
+        passcode: DARK_MAGICIAN,
+        name: "Dark Magician".into(),
+        kind: "Normal Monster".into(),
+        description: "''The ultimate wizard in terms of attack and defense.''".into(),
+        attribute: Some("DARK".into()),
+        race: Some("Spellcaster".into()),
+        level: Some(7),
+        link_rating: None,
+        atk: Some(2500),
+        def: Some(2100),
+    };
+    assert_eq!(
+        db.get(DARK_MAGICIAN_ALT_ART, Language::En).unwrap(),
+        Some(dark_magician.clone())
+    );
+    assert_eq!(
+        db.get(DARK_MAGICIAN, Language::En).unwrap(),
+        Some(dark_magician)
+    );
+}

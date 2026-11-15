@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use rusqlite::{Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
 use crate::client::ApiCard;
@@ -63,6 +63,27 @@ pub enum SyncOutcome {
 }
 
 impl CardDb {
+    /// Adds `language` to the languages synced from now on, so the next
+    /// [`CardDb::sync`] downloads it even when the `database_version` has not changed.
+    /// English is always synced, so requesting it does nothing. The request is stored in
+    /// the database and holds for every later sync.
+    ///
+    /// # Errors
+    ///
+    /// [`CardDbError`] if the database cannot be read or written.
+    pub fn request_language(&self, language: Language) -> Result<(), CardDbError> {
+        if language == Language::En {
+            return Ok(());
+        }
+        let conn = self.lock();
+        let mut requested = read_languages(&conn, REQUESTED_LANGUAGES)?;
+        if !requested.contains(&language) {
+            requested.push(language);
+            write_languages(&conn, REQUESTED_LANGUAGES, &requested)?;
+        }
+        Ok(())
+    }
+
     /// Brings the card data up to date with YGOPRODeck, calling `on_progress` as it goes.
     ///
     /// Always asks `checkDBVer.php` first. When the `database_version` is the one stored
@@ -85,10 +106,13 @@ impl CardDb {
         let version = self.client.database_version().await?;
         on_progress(progress(SyncStage::CheckingVersion, 1, 1));
 
-        let languages = [Language::En];
+        let path = self.path().to_owned();
+        let state = blocking(move || SyncState::read(&path)).await?;
+        let languages = state.wanted_languages();
+
         let mut downloads = Vec::with_capacity(languages.len());
         on_progress(progress(SyncStage::Downloading, 0, languages.len()));
-        for language in languages {
+        for &language in &languages {
             downloads.push(Download {
                 language,
                 cards: self.client.card_info(language).await?,
@@ -110,6 +134,34 @@ impl CardDb {
     }
 }
 
+/// Metadata keys.
+const DATABASE_VERSION: &str = "database_version";
+/// The languages besides English the operator asked for, as a JSON array of codes.
+const REQUESTED_LANGUAGES: &str = "requested_languages";
+/// The languages stored for `database_version`, as a JSON array of codes.
+const SYNCED_LANGUAGES: &str = "synced_languages";
+
+/// What the database holds, as far as a sync needs to know.
+struct SyncState {
+    requested_languages: Vec<Language>,
+}
+
+impl SyncState {
+    fn read(path: &Path) -> Result<Self, CardDbError> {
+        let conn = connect(path)?;
+        Ok(Self {
+            requested_languages: read_languages(&conn, REQUESTED_LANGUAGES)?,
+        })
+    }
+
+    /// English, then every requested language in the order they were requested.
+    fn wanted_languages(&self) -> Vec<Language> {
+        let mut wanted = vec![Language::En];
+        wanted.extend(&self.requested_languages);
+        wanted
+    }
+}
+
 /// The cards downloaded for one language.
 struct Download {
     language: Language,
@@ -121,8 +173,11 @@ fn store(path: &Path, version: &str, downloads: &[Download]) -> Result<(), CardD
     let mut conn = connect(path)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute("DELETE FROM cards", [])?;
+    tx.execute("DELETE FROM card_aliases", [])?;
     insert_cards(&tx, downloads)?;
-    write_metadata(&tx, "database_version", version)?;
+    write_metadata(&tx, DATABASE_VERSION, version)?;
+    let synced: Vec<Language> = downloads.iter().map(|download| download.language).collect();
+    write_languages(&tx, SYNCED_LANGUAGES, &synced)?;
     tx.commit()?;
     Ok(())
 }
@@ -133,8 +188,20 @@ fn insert_cards(tx: &Transaction<'_>, downloads: &[Download]) -> Result<(), Card
              attribute, race, level, link_rating, atk, def, raw_json)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )?;
+    // Every language lists the same artworks, so writing aliases twice is harmless.
+    let mut insert_alias = tx.prepare(
+        "INSERT OR REPLACE INTO card_aliases (image_id, passcode) VALUES (?1, ?2)",
+    )?;
     for Download { language, cards } in downloads {
-        for ApiCard { card, raw_json, .. } in cards {
+        for ApiCard {
+            card,
+            image_ids,
+            raw_json,
+        } in cards
+        {
+            for image_id in image_ids.iter().filter(|&&id| id != card.passcode) {
+                insert_alias.execute(params![image_id.0, card.passcode.0])?;
+            }
             insert.execute(params![
                 card.passcode.0,
                 language.code(),
@@ -154,12 +221,36 @@ fn insert_cards(tx: &Transaction<'_>, downloads: &[Download]) -> Result<(), Card
     Ok(())
 }
 
-fn write_metadata(tx: &Transaction<'_>, key: &str, value: &str) -> Result<(), CardDbError> {
-    tx.execute(
+fn read_metadata(conn: &Connection, key: &str) -> Result<Option<String>, CardDbError> {
+    let value = conn
+        .query_row(
+            "SELECT value FROM metadata WHERE key = ?1",
+            [key],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(value)
+}
+
+fn write_metadata(conn: &Connection, key: &str, value: &str) -> Result<(), CardDbError> {
+    conn.execute(
         "INSERT OR REPLACE INTO metadata (key, value) VALUES (?1, ?2)",
         params![key, value],
     )?;
     Ok(())
+}
+
+fn read_languages(conn: &Connection, key: &str) -> Result<Vec<Language>, CardDbError> {
+    // Languages are only ever written by `write_languages`, so a value that does not
+    // parse is treated as no languages rather than as a broken database.
+    Ok(read_metadata(conn, key)?
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default())
+}
+
+fn write_languages(conn: &Connection, key: &str, languages: &[Language]) -> Result<(), CardDbError> {
+    let json = serde_json::to_string(languages).expect("languages serialize as strings");
+    write_metadata(conn, key, &json)
 }
 
 /// Runs blocking database work on tokio's blocking pool, off the async path.

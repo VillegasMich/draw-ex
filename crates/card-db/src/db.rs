@@ -125,7 +125,8 @@ impl CardDb {
     /// Looks up a card's data in `language`. Returns `None` if the passcode is unknown.
     ///
     /// Falls back to English when `language` has not been synced or the card has no
-    /// translation.
+    /// translation. An alternate artwork's image ID finds the card it belongs to, whose
+    /// [`Card::passcode`] is the card's own passcode.
     ///
     /// # Errors
     ///
@@ -136,7 +137,9 @@ impl CardDb {
             "SELECT passcode, name, kind, description, attribute, race, level, link_rating,
                     atk, def
              FROM cards
-             WHERE passcode = ?1 AND language IN (?2, 'en')
+             WHERE passcode = COALESCE(
+                       (SELECT passcode FROM card_aliases WHERE image_id = ?1), ?1)
+               AND language IN (?2, 'en')
              ORDER BY language = 'en'
              LIMIT 1",
         )?;
@@ -151,7 +154,7 @@ impl CardDb {
         &self.path
     }
 
-    fn lock(&self) -> MutexGuard<'_, Connection> {
+    pub(crate) fn lock(&self) -> MutexGuard<'_, Connection> {
         // A panic while holding the lock cannot leave the connection half-changed:
         // SQLite rolls back an unfinished transaction.
         self.conn.lock().unwrap_or_else(PoisonError::into_inner)
