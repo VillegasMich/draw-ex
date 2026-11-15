@@ -3,11 +3,7 @@
     {
       "id": 14558127,
       "name": "Ash Blossom & Joyous Spring",
-      "typeline": [
-        "Zombie",
-        "Tuner",
-        "Effect"
-      ],
+      "typeline": ["Zombie", "Tuner", "Effect"],
       "type": "Tuner Monster",
       "humanReadableCardType": "Tuner Effect Monster",
       "frameType": "effect",
@@ -80,10 +76,7 @@
     {
       "id": 46986414,
       "name": "Dark Magician",
-      "typeline": [
-        "Spellcaster",
-        "Normal"
-      ],
+      "typeline": ["Spellcaster", "Normal"],
       "type": "Normal Monster",
       "humanReadableCardType": "Normal Monster",
       "frameType": "normal",
@@ -113,11 +106,7 @@
     {
       "id": 1861629,
       "name": "Decode Talker",
-      "typeline": [
-        "Cyberse",
-        "Link",
-        "Effect"
-      ],
+      "typeline": ["Cyberse", "Link", "Effect"],
       "type": "Link Monster",
       "humanReadableCardType": "Link Effect Monster",
       "frameType": "link",
@@ -129,11 +118,7 @@
       "attribute": "DARK",
       "archetype": "Code Talker",
       "linkval": 3,
-      "linkmarkers": [
-        "Top",
-        "Bottom-Left",
-        "Bottom-Right"
-      ],
+      "linkmarkers": ["Top", "Bottom-Left", "Bottom-Right"],
       "ygoprodeck_url": "https://ygoprodeck.com/card/decode-talker-8433",
       "card_images": [
         {

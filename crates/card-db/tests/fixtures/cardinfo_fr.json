@@ -3,11 +3,7 @@
     {
       "id": 14558127,
       "name": "Floraison de Cendres et Joyeux Printemps",
-      "typeline": [
-        "Zombie",
-        "Tuner",
-        "Effect"
-      ],
+      "typeline": ["Zombie", "Tuner", "Effect"],
       "type": "Tuner Monster",
       "humanReadableCardType": "Tuner Effect Monster",
       "frameType": "effect",
