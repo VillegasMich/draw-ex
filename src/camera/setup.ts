@@ -45,3 +45,10 @@ function defaultSplitLine({ width, height }: VideoSize): SplitLine {
   const middle = height / 2;
   return { from: { x: width, y: middle }, to: { x: 0, y: middle } };
 }
+
+/** The cameras a selection uses, without duplicates. */
+export function setupCameras(selection: SetupSelection): CameraId[] {
+  return selection.kind === 'twoCameras'
+    ? [...new Set([selection.a, selection.b])]
+    : [selection.camera];
+}
