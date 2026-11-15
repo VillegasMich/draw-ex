@@ -21,8 +21,26 @@ pub(crate) struct VoteWindow {
     size: usize,
 }
 
+/// One passcode's standing in a window.
+#[derive(Debug, Clone, Copy)]
+struct Tally {
+    passcode: Passcode,
+    votes: u32,
+    /// Summed in f64 so small sums of f32 scores are exact, and a margin met exactly
+    /// (3 × 0.9 against 1.5 × 2 × 0.9) is not lost to rounding.
+    score: f64,
+}
+
+impl Tally {
+    /// Whether this tally leads `other`: a higher summed score, then more votes.
+    fn leads(&self, other: &Self) -> bool {
+        (self.score, self.votes) > (other.score, other.votes)
+    }
+}
+
 impl VoteWindow {
     /// An empty window holding the last `size` observations.
+    #[must_use]
     pub(crate) fn new(size: usize) -> Self {
         Self {
             slots: VecDeque::with_capacity(size),
@@ -43,43 +61,39 @@ impl VoteWindow {
 
     /// The passcode that wins the vote, if any.
     ///
-    /// The leader is the passcode with the highest summed score in the window. It wins
-    /// when it has at least `min_votes` votes and its summed score is at least
-    /// `min_margin` times the runner-up's (an absent runner-up counts as 0).
+    /// The leader is the passcode with the highest summed score in the window (then the
+    /// most votes). It wins when it has at least `min_votes` votes and its summed score
+    /// is at least `min_margin` times the runner-up's (an absent runner-up counts as 0).
+    #[must_use]
     pub(crate) fn winner(&self, min_votes: u32, min_margin: f32) -> Option<Passcode> {
-        // (passcode, votes, summed score), in order of first appearance so ties break
-        // deterministically. The window is a handful of slots, so a linear scan is fine.
-        let mut tally: Vec<(Passcode, u32, f64)> = Vec::with_capacity(self.slots.len());
+        // The window is a handful of slots, so a linear scan is fine.
+        let mut tallies: Vec<Tally> = Vec::with_capacity(self.slots.len());
         for vote in self.slots.iter().flatten() {
-            // Summing f32 scores in f64 keeps small sums exact, so a margin met exactly
-            // (3 × 0.9 against 1.5 × 2 × 0.9) is not lost to rounding.
             let score = f64::from(vote.score);
-            match tally.iter_mut().find(|(p, _, _)| *p == vote.passcode) {
-                Some((_, votes, sum)) => {
-                    *votes += 1;
-                    *sum += score;
+            match tallies.iter_mut().find(|t| t.passcode == vote.passcode) {
+                Some(tally) => {
+                    tally.votes += 1;
+                    tally.score += score;
                 }
-                None => tally.push((vote.passcode, 1, score)),
+                None => tallies.push(Tally {
+                    passcode: vote.passcode,
+                    votes: 1,
+                    score,
+                }),
             }
         }
 
-        let mut leader: Option<(Passcode, u32, f64)> = None;
-        let mut runner_up_sum = 0.0;
-        for &(passcode, votes, sum) in &tally {
-            match leader {
-                Some((_, _, leader_sum)) if sum <= leader_sum => {
-                    runner_up_sum = f64::max(runner_up_sum, sum);
-                }
-                _ => {
-                    if let Some((_, _, previous)) = leader {
-                        runner_up_sum = f64::max(runner_up_sum, previous);
-                    }
-                    leader = Some((passcode, votes, sum));
-                }
-            }
-        }
+        let leader = tallies
+            .iter()
+            .copied()
+            .reduce(|best, tally| if tally.leads(&best) { tally } else { best })?;
+        let runner_up_score = tallies
+            .iter()
+            .filter(|tally| tally.passcode != leader.passcode)
+            .map(|tally| tally.score)
+            .fold(0.0, f64::max);
 
-        let (passcode, votes, sum) = leader?;
-        (votes >= min_votes && sum >= f64::from(min_margin) * runner_up_sum).then_some(passcode)
+        (leader.votes >= min_votes && leader.score >= f64::from(min_margin) * runner_up_score)
+            .then_some(leader.passcode)
     }
 }

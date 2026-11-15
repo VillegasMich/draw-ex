@@ -177,6 +177,8 @@ impl Default for TrackerConfig {
 ///
 /// Observations from a camera that is not part of the setup are ignored. The logic is
 /// pure: time only advances through `time_ms` and `now_ms`.
+///
+/// The configuration is not validated: a `window_size` below `min_votes` never confirms.
 #[derive(Debug)]
 pub struct Tracker {
     config: TrackerConfig,
@@ -271,6 +273,10 @@ impl Tracker {
     /// [`TrackEvent::Lost`] events.
     ///
     /// Unconfirmed tracks are closed silently. Events come in order of track ID.
+    ///
+    /// Call it at least once per frame, before that frame's observations: a track past
+    /// the grace period is never continued, so a card put back in its place starts a new
+    /// track, and ticking first keeps the old track's `Lost` before the new `Confirmed`.
     pub fn tick(&mut self, now_ms: f64) -> Vec<TrackEvent> {
         let grace_ms = self.config.grace_ms;
         let mut events = Vec::new();
@@ -310,9 +316,9 @@ impl Tracker {
             .filter_map(|(index, track)| {
                 let track_bounds = Bounds::of(&track.quad);
                 let distance = track_bounds.center_distance(&bounds) / track_bounds.short_side();
-                let near = distance <= self.config.max_center_distance
+                let continues = distance <= self.config.max_center_distance
                     || track_bounds.iou(&bounds) >= self.config.min_iou;
-                near.then_some((index, distance))
+                continues.then_some((index, distance))
             })
             .min_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(index, _)| index)
@@ -327,6 +333,7 @@ impl Tracker {
             camera: observation.camera.clone(),
             quad: observation.quad,
             last_seen_ms: observation.time_ms,
+            // u32 always fits in usize on the 32- and 64-bit targets the app ships on.
             votes: VoteWindow::new(self.config.window_size as usize),
             confirmed: None,
         });
@@ -420,11 +427,14 @@ fn player_for(setup: &CameraSetup, observation: &Observation) -> Option<Player> 
     let camera = &observation.camera;
     match setup {
         CameraSetup::OneSide {
-            camera: only,
+            camera: setup_camera,
             player,
-        } => (camera == only).then_some(*player),
-        CameraSetup::SplitLine { camera: only, line } => {
-            (camera == only).then(|| line.player_at(Bounds::of(&observation.quad).center()))
+        } => (camera == setup_camera).then_some(*player),
+        CameraSetup::SplitLine {
+            camera: setup_camera,
+            line,
+        } => {
+            (camera == setup_camera).then(|| line.player_at(Bounds::of(&observation.quad).center()))
         }
         CameraSetup::TwoCameras { a, b } => {
             if camera == a {
@@ -524,7 +534,7 @@ mod tests {
 
     /// An upright 100 × 140 px card whose top-left corner is at (`x`, `y`).
     fn card_at(x: f32, y: f32) -> Quad {
-        let point = |dx: f32, dy: f32| domain::Point {
+        let point = |dx: f32, dy: f32| Point {
             x: x + dx,
             y: y + dy,
         };
@@ -567,12 +577,7 @@ mod tests {
         assert_eq!(tracker.observe(seen(quad, Some(MONSTER_REBORN), 100.0)), []);
         assert_eq!(
             tracker.observe(seen(quad, Some(MONSTER_REBORN), 200.0)),
-            [TrackEvent::Confirmed {
-                track: TrackId(1),
-                player: Player::A,
-                passcode: MONSTER_REBORN,
-                time_ms: 200.0,
-            }]
+            [confirmed_monster_reborn(200.0)]
         );
         assert_eq!(
             tracker.observe(seen(quad, Some(MONSTER_REBORN), 300.0)),
@@ -596,12 +601,7 @@ mod tests {
         assert_eq!(
             events,
             [
-                TrackEvent::Confirmed {
-                    track: TrackId(1),
-                    player: Player::A,
-                    passcode: MONSTER_REBORN,
-                    time_ms: 200.0,
-                },
+                confirmed_monster_reborn(200.0),
                 TrackEvent::Confirmed {
                     track: TrackId(2),
                     player: Player::A,
@@ -623,15 +623,7 @@ mod tests {
         events.extend(tracker.observe(seen(quad, Some(MONSTER_REBORN), 1600.0)));
         events.extend(tracker.tick(1700.0));
 
-        assert_eq!(
-            events,
-            [TrackEvent::Confirmed {
-                track: TrackId(1),
-                player: Player::A,
-                passcode: MONSTER_REBORN,
-                time_ms: 1600.0,
-            }]
-        );
+        assert_eq!(events, [confirmed_monster_reborn(1600.0)]);
     }
 
     #[test]
@@ -651,21 +643,14 @@ mod tests {
             )));
         }
 
-        assert_eq!(
-            events,
-            [TrackEvent::Confirmed {
-                track: TrackId(1),
-                player: Player::A,
-                passcode: MONSTER_REBORN,
-                time_ms: 200.0,
-            }]
-        );
+        assert_eq!(events, [confirmed_monster_reborn(200.0)]);
     }
 
-    /// Observes `passcodes` in order at `quad`, one frame every 100 ms from `start_ms`,
-    /// and returns every event.
-    fn observe_sequence(
+    /// Observes `passcodes` in order at `quad` from `cam`, one frame every 100 ms from
+    /// `start_ms`, and returns every event.
+    fn observe_sequence_by(
         tracker: &mut Tracker,
+        cam: &str,
         quad: Quad,
         start_ms: f64,
         passcodes: &[Option<Passcode>],
@@ -674,9 +659,20 @@ mod tests {
             .iter()
             .zip(0_u32..)
             .flat_map(|(&passcode, frame)| {
-                tracker.observe(seen(quad, passcode, start_ms + f64::from(frame) * 100.0))
+                let time_ms = start_ms + f64::from(frame) * 100.0;
+                tracker.observe(seen_by(cam, quad, passcode, time_ms))
             })
             .collect()
+    }
+
+    /// [`observe_sequence_by`] from the camera `cam`.
+    fn observe_sequence(
+        tracker: &mut Tracker,
+        quad: Quad,
+        start_ms: f64,
+        passcodes: &[Option<Passcode>],
+    ) -> Vec<TrackEvent> {
+        observe_sequence_by(tracker, "cam", quad, start_ms, passcodes)
     }
 
     fn confirmed_monster_reborn(time_ms: f64) -> TrackEvent {
@@ -816,12 +812,7 @@ mod tests {
     /// Observes `quad` from `cam` as Monster Reborn on three frames, 100 ms apart from
     /// `start_ms`, and returns every event.
     fn confirm_on(tracker: &mut Tracker, cam: &str, quad: Quad, start_ms: f64) -> Vec<TrackEvent> {
-        (0..3_u8)
-            .flat_map(|frame| {
-                let time_ms = start_ms + f64::from(frame) * 100.0;
-                tracker.observe(seen_by(cam, quad, Some(MONSTER_REBORN), time_ms))
-            })
-            .collect()
+        observe_sequence_by(tracker, cam, quad, start_ms, &[Some(MONSTER_REBORN); 3])
     }
 
     fn confirmed_player(events: &[TrackEvent]) -> Option<Player> {
