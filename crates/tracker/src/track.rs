@@ -528,4 +528,54 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn flicker_under_the_grace_period_does_not_create_a_duplicate_track() {
+        let mut tracker = one_side_tracker();
+        let quad = card_at(200.0, 300.0);
+
+        let mut events = tracker.observe(seen(quad, Some(MONSTER_REBORN), 0.0));
+        // Not detected for 1.5 s, then seen again in the same place.
+        events.extend(tracker.observe(seen(quad, Some(MONSTER_REBORN), 1500.0)));
+        events.extend(tracker.observe(seen(quad, Some(MONSTER_REBORN), 1600.0)));
+        events.extend(tracker.tick(1700.0));
+
+        assert_eq!(
+            events,
+            [TrackEvent::Confirmed {
+                track: TrackId(1),
+                player: Player::A,
+                passcode: MONSTER_REBORN,
+                time_ms: 1600.0,
+            }]
+        );
+    }
+
+    #[test]
+    fn slightly_moving_card_stays_one_track() {
+        let mut tracker = one_side_tracker();
+
+        let mut events = Vec::new();
+        for frame in 0..10_u8 {
+            // Drifts 15 px right and 10 px down per frame: 150 px over the sequence,
+            // more than the card's width.
+            let step = f32::from(frame);
+            let quad = card_at(200.0 + 15.0 * step, 300.0 + 10.0 * step);
+            events.extend(tracker.observe(seen(
+                quad,
+                Some(MONSTER_REBORN),
+                f64::from(frame) * 100.0,
+            )));
+        }
+
+        assert_eq!(
+            events,
+            [TrackEvent::Confirmed {
+                track: TrackId(1),
+                player: Player::A,
+                passcode: MONSTER_REBORN,
+                time_ms: 200.0,
+            }]
+        );
+    }
 }
