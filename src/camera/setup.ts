@@ -1,0 +1,47 @@
+import type { CameraId, CameraSetup, Player, SplitLine } from '../lib/bindings';
+
+/** What the operator picked in the Setup modal. */
+export type SetupSelection =
+  | { kind: 'oneSide'; camera: CameraId; player: Player }
+  | { kind: 'splitLine'; camera: CameraId }
+  | { kind: 'twoCameras'; a: CameraId; b: CameraId };
+
+/** A video's intrinsic size (`videoWidth` × `videoHeight`), in frame pixels. */
+export interface VideoSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Builds the `CameraSetup` sent to `setCameraSetup` from the operator's selection.
+ *
+ * `videoSize` is the size of the Both sides camera's video. Returns `null` for Both sides
+ * until that size is known, because the split line is in that camera's frame pixels.
+ */
+export function toCameraSetup(
+  selection: SetupSelection,
+  videoSize: VideoSize | null,
+): CameraSetup | null {
+  switch (selection.kind) {
+    case 'oneSide':
+      return { kind: 'oneSide', camera: selection.camera, player: selection.player };
+    case 'splitLine':
+      // `videoWidth` and `videoHeight` read 0 until the first frame's metadata arrives.
+      if (!videoSize || videoSize.width <= 0 || videoSize.height <= 0) {
+        return null;
+      }
+      return { kind: 'splitLine', camera: selection.camera, line: defaultSplitLine(videoSize) };
+    case 'twoCameras':
+      return { kind: 'twoCameras', a: selection.a, b: selection.b };
+  }
+}
+
+/**
+ * The horizontal line through the middle of the frame, drawn right → left, so Player A
+ * (left of `from → to`) gets the bottom half. Mirrors `SplitLine::default_for` in
+ * `crates/tracker/src/players.rs`; keep the two in sync.
+ */
+function defaultSplitLine({ width, height }: VideoSize): SplitLine {
+  const middle = height / 2;
+  return { from: { x: width, y: middle }, to: { x: 0, y: middle } };
+}
