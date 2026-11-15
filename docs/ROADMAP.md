@@ -340,8 +340,11 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - Each camera is requested at **1920×1080 ideal**, falling back to what the camera
     supports.
 - **Done when**:
-  - [ ] Each setup shows live preview on macOS and Windows.
-  - [ ] Unplugging a camera shows an error instead of a frozen frame.
+  - [x] Each setup shows live preview on macOS (built-in camera; Two cameras verified
+    with the same camera twice).
+  - [ ] Each setup shows live preview on Windows.
+  - [x] Unplugging a camera shows an error instead of a frozen frame (simulated in
+    `src/App.test.ts` with an ended track; not physically unplugged).
 
 #### D2: Frame pipeline
 - **Branch**: `feat/frame-pipeline`. **Depends on**: D1 (a `<video src=sample.mp4>`
