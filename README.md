@@ -214,8 +214,8 @@ Design:
   cropped artwork is missing for some cards). When a deck list is loaded, its card images
   are prefetched.
 - **One global rate limiter** guards every request to YGOPRODeck: 10 requests/s with
-  no burst, half the 20/s limit. The frontend never loads YGOPRODeck URLs directly: images reach the
-  webview from the local cache.
+  no burst, half the 20/s limit. The frontend never loads YGOPRODeck URLs directly:
+  images reach the webview from the local cache.
 - **Cache management**: a settings screen shows the cache size, with buttons to clear
   images, re-sync data, or delete models. The image cache has a size cap with LRU
   eviction.

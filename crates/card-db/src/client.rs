@@ -53,8 +53,7 @@ impl Client {
             .connect_timeout(CONNECT_TIMEOUT)
             .read_timeout(READ_TIMEOUT)
             .timeout(TOTAL_TIMEOUT)
-            .build()
-            .map_err(CardDbError::Request)?;
+            .build()?;
         Ok(Self {
             http,
             base_url,
@@ -116,11 +115,9 @@ impl Client {
             .get(url)
             .send()
             .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(CardDbError::Request)?
+            .and_then(reqwest::Response::error_for_status)?
             .bytes()
-            .await
-            .map_err(CardDbError::Request)?;
+            .await?;
         serde_json::from_slice(&body).map_err(CardDbError::InvalidResponse)
     }
 }

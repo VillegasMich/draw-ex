@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant, SystemTime};
 
-use card_db::{Card, CardDb, Language, SyncOutcome, SyncProgress, SyncStage};
+use card_db::{Card, CardDb, CardDbError, Language, SyncOutcome, SyncProgress, SyncStage};
 use domain::Passcode;
 use tempfile::TempDir;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
@@ -218,7 +218,7 @@ async fn get_falls_back_to_english_for_a_missing_translation_or_an_unsynced_lang
 
 const DARK_MAGICIAN: Passcode = Passcode(46_986_414);
 /// An alternate artwork of Dark Magician (see `fixtures/README.md`).
-const DARK_MAGICIAN_ALT_ART: Passcode = Passcode(36_996_508);
+const DARK_MAGICIAN_ALTERNATE_ARTWORK: Passcode = Passcode(36_996_508);
 const DECODE_TALKER: Passcode = Passcode(1_861_629);
 
 #[tokio::test]
@@ -270,7 +270,8 @@ async fn an_alternate_artwork_image_id_looks_up_the_card_it_belongs_to() {
         def: Some(2100),
     };
     assert_eq!(
-        db.get(DARK_MAGICIAN_ALT_ART, Language::En).unwrap(),
+        db.get(DARK_MAGICIAN_ALTERNATE_ARTWORK, Language::En)
+            .unwrap(),
         Some(dark_magician.clone())
     );
     assert_eq!(
@@ -390,7 +391,10 @@ async fn a_failed_download_leaves_the_stored_card_data_intact_and_usable() {
 
     let result = db.sync(|_| {}).await;
 
-    assert!(result.is_err(), "sync succeeded: {result:?}");
+    assert!(
+        matches!(result, Err(CardDbError::Request(_))),
+        "expected a request error, got {result:?}"
+    );
     assert_eq!(
         db.get(ASH_BLOSSOM, Language::Fr).unwrap(),
         Some(ash_blossom_fr())
@@ -410,14 +414,17 @@ async fn an_unreachable_ygoprodeck_fails_the_sync_and_the_stored_card_data_stays
         CardDb::open_with_base_url(dir.path().join("cards.db"), &unreachable_base_url()).unwrap();
     let result = db.sync(|_| {}).await;
 
-    assert!(result.is_err(), "sync succeeded: {result:?}");
+    assert!(
+        matches!(result, Err(CardDbError::Request(_))),
+        "expected a request error, got {result:?}"
+    );
     assert_eq!(
         db.get(ASH_BLOSSOM, Language::En).unwrap(),
         Some(ash_blossom_en())
     );
 }
 
-const HOUR: Duration = Duration::from_secs(60 * 60);
+const HOUR: Duration = Duration::from_hours(1);
 
 /// A base URL where connections are refused.
 fn unreachable_base_url() -> String {
@@ -476,7 +483,12 @@ async fn a_failed_check_does_not_count_as_a_check() {
     let db =
         CardDb::open_with_base_url(dir.path().join("cards.db"), &unreachable_base_url()).unwrap();
 
-    assert!(db.sync(|_| {}).await.is_err());
+    let result = db.sync(|_| {}).await;
+
+    assert!(
+        matches!(result, Err(CardDbError::Request(_))),
+        "expected a request error, got {result:?}"
+    );
 
     assert!(db.needs_check(SystemTime::now()).unwrap());
 }

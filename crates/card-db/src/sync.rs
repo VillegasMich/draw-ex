@@ -1,7 +1,6 @@
 //! Owned by B1 (docs/ROADMAP.md): bulk sync of `cardinfo.php` into the card database,
 //! re-run only when `checkDBVer.php` reports a new `database_version`.
 
-use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -133,12 +132,11 @@ impl CardDb {
         let checked_at = SystemTime::now();
         on_progress(progress(SyncStage::CheckingVersion, 1, 1));
 
-        let path = self.path().to_owned();
-        let state = blocking(move || SyncState::read(&path)).await?;
+        let state = self.off_async_path(|conn| SyncState::read(conn)).await?;
         let (languages, replace) = match state.plan(&version) {
             Plan::UpToDate => {
-                let path = self.path().to_owned();
-                blocking(move || write_last_check(&connect(&path)?, checked_at)).await?;
+                self.off_async_path(move |conn| write_last_check(conn, checked_at))
+                    .await?;
                 return Ok(SyncOutcome::UpToDate { version });
             }
             Plan::Add(languages) => (languages, Replace::No),
@@ -161,9 +159,11 @@ impl CardDb {
 
         let card_count = downloads.iter().map(|download| download.cards.len()).sum();
         on_progress(progress(SyncStage::Storing, 0, card_count));
-        let path = self.path().to_owned();
         let stored_version = version.clone();
-        blocking(move || store(&path, &stored_version, &downloads, replace, checked_at)).await?;
+        self.off_async_path(move |conn| {
+            store(conn, &stored_version, &downloads, replace, checked_at)
+        })
+        .await?;
         on_progress(progress(SyncStage::Storing, card_count, card_count));
 
         Ok(SyncOutcome::Updated {
@@ -193,12 +193,11 @@ struct SyncState {
 }
 
 impl SyncState {
-    fn read(path: &Path) -> Result<Self, CardDbError> {
-        let conn = connect(path)?;
+    fn read(conn: &Connection) -> Result<Self, CardDbError> {
         Ok(Self {
-            version: read_metadata(&conn, DATABASE_VERSION)?,
-            synced_languages: read_languages(&conn, SYNCED_LANGUAGES)?,
-            requested_languages: read_languages(&conn, REQUESTED_LANGUAGES)?,
+            version: read_metadata(conn, DATABASE_VERSION)?,
+            synced_languages: read_languages(conn, SYNCED_LANGUAGES)?,
+            requested_languages: read_languages(conn, REQUESTED_LANGUAGES)?,
         })
     }
 
@@ -247,13 +246,12 @@ struct Download {
 /// Stores `downloads` as YGOPRODeck's `version`, in one transaction, either replacing
 /// all stored card data or adding languages to it.
 fn store(
-    path: &Path,
+    conn: &mut Connection,
     version: &str,
     downloads: &[Download],
     replace: Replace,
     checked_at: SystemTime,
 ) -> Result<(), CardDbError> {
-    let mut conn = connect(path)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut synced = match replace {
         Replace::Yes => {
@@ -359,14 +357,20 @@ fn write_languages(
     write_metadata(conn, key, &json)
 }
 
-/// Runs blocking database work on tokio's blocking pool, off the async path.
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, CardDbError> + Send + 'static,
-) -> Result<T, CardDbError> {
-    match tokio::task::spawn_blocking(work).await {
-        Ok(result) => result,
-        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
-        Err(error) => Err(CardDbError::Cancelled(error)),
+impl CardDb {
+    /// Runs `work` on tokio's blocking pool, off the async path, with a connection of
+    /// its own, so lookups through the shared connection never wait for it.
+    async fn off_async_path<T: Send + 'static>(
+        &self,
+        work: impl FnOnce(&mut Connection) -> Result<T, CardDbError> + Send + 'static,
+    ) -> Result<T, CardDbError> {
+        let path = self.path().to_owned();
+        let task = tokio::task::spawn_blocking(move || work(&mut connect(&path)?));
+        match task.await {
+            Ok(result) => result,
+            Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+            Err(error) => Err(CardDbError::Cancelled(error)),
+        }
     }
 }
 

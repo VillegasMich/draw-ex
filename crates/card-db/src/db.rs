@@ -81,6 +81,11 @@ pub struct Card {
 /// English is always synced; other languages are synced once requested with
 /// [`CardDb::request_language`]. Lookups work offline, from whatever the last sync
 /// stored.
+///
+/// The synchronous methods ([`CardDb::get`], [`CardDb::needs_check`],
+/// [`CardDb::request_language`]) run one small indexed SQLite query each and may wait
+/// briefly for each other; [`CardDb::sync`] does its database work on tokio's blocking
+/// pool.
 #[derive(Debug)]
 pub struct CardDb {
     path: PathBuf,
@@ -255,7 +260,7 @@ pub enum CardDbError {
     },
     /// A YGOPRODeck request failed: no connection, a timeout or an error status.
     #[error("YGOPRODeck request failed")]
-    Request(#[source] reqwest::Error),
+    Request(#[from] reqwest::Error),
     /// YGOPRODeck answered with JSON this client does not understand.
     #[error("YGOPRODeck sent an unexpected response")]
     InvalidResponse(#[source] serde_json::Error),
