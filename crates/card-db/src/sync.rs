@@ -88,9 +88,10 @@ impl CardDb {
     ///
     /// Always asks `checkDBVer.php` first. When the `database_version` is the one stored
     /// and every wanted language is present, that is the only request. When the version
-    /// changed, English and every requested language are downloaded again and replace
-    /// the stored data in one transaction. Only one sync runs at a time; a second call
-    /// waits for the first.
+    /// is unchanged but a language was requested since, only that language is
+    /// downloaded. When the version changed, English and every requested language are
+    /// downloaded again and replace the stored data. Downloads are stored in one
+    /// transaction. Only one sync runs at a time; a second call waits for the first.
     ///
     /// # Errors
     ///
@@ -108,7 +109,11 @@ impl CardDb {
 
         let path = self.path().to_owned();
         let state = blocking(move || SyncState::read(&path)).await?;
-        let languages = state.wanted_languages();
+        let (languages, replace) = match state.plan(&version) {
+            Plan::UpToDate => return Ok(SyncOutcome::UpToDate { version }),
+            Plan::Add(languages) => (languages, Replace::No),
+            Plan::Replace(languages) => (languages, Replace::Yes),
+        };
 
         let mut downloads = Vec::with_capacity(languages.len());
         on_progress(progress(SyncStage::Downloading, 0, languages.len()));
@@ -117,14 +122,18 @@ impl CardDb {
                 language,
                 cards: self.client.card_info(language).await?,
             });
-            on_progress(progress(SyncStage::Downloading, downloads.len(), languages.len()));
+            on_progress(progress(
+                SyncStage::Downloading,
+                downloads.len(),
+                languages.len(),
+            ));
         }
 
         let card_count = downloads.iter().map(|download| download.cards.len()).sum();
         on_progress(progress(SyncStage::Storing, 0, card_count));
         let path = self.path().to_owned();
         let stored_version = version.clone();
-        blocking(move || store(&path, &stored_version, &downloads)).await?;
+        blocking(move || store(&path, &stored_version, &downloads, replace)).await?;
         on_progress(progress(SyncStage::Storing, card_count, card_count));
 
         Ok(SyncOutcome::Updated {
@@ -143,6 +152,10 @@ const SYNCED_LANGUAGES: &str = "synced_languages";
 
 /// What the database holds, as far as a sync needs to know.
 struct SyncState {
+    /// The `database_version` the stored card data came from; `None` before the first
+    /// sync.
+    version: Option<String>,
+    synced_languages: Vec<Language>,
     requested_languages: Vec<Language>,
 }
 
@@ -150,16 +163,46 @@ impl SyncState {
     fn read(path: &Path) -> Result<Self, CardDbError> {
         let conn = connect(path)?;
         Ok(Self {
+            version: read_metadata(&conn, DATABASE_VERSION)?,
+            synced_languages: read_languages(&conn, SYNCED_LANGUAGES)?,
             requested_languages: read_languages(&conn, REQUESTED_LANGUAGES)?,
         })
     }
 
-    /// English, then every requested language in the order they were requested.
-    fn wanted_languages(&self) -> Vec<Language> {
-        let mut wanted = vec![Language::En];
-        wanted.extend(&self.requested_languages);
-        wanted
+    /// What to download to bring the stored data to YGOPRODeck's `version`.
+    fn plan(&self, version: &str) -> Plan {
+        // English, then every requested language in the order they were requested.
+        let wanted = std::iter::once(Language::En).chain(self.requested_languages.iter().copied());
+        if self.version.as_deref() != Some(version) {
+            return Plan::Replace(wanted.collect());
+        }
+        let missing: Vec<Language> = wanted
+            .filter(|language| !self.synced_languages.contains(language))
+            .collect();
+        if missing.is_empty() {
+            Plan::UpToDate
+        } else {
+            Plan::Add(missing)
+        }
     }
+}
+
+/// What a sync downloads, once it knows YGOPRODeck's `database_version`.
+#[derive(Debug, PartialEq, Eq)]
+enum Plan {
+    /// The stored data is that version in every wanted language: download nothing.
+    UpToDate,
+    /// The version is unchanged, but these requested languages are not stored yet.
+    Add(Vec<Language>),
+    /// The version changed (or nothing is stored): download every wanted language.
+    Replace(Vec<Language>),
+}
+
+/// Whether a sync's downloads replace all stored card data or add to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Replace {
+    Yes,
+    No,
 }
 
 /// The cards downloaded for one language.
@@ -168,15 +211,27 @@ struct Download {
     cards: Vec<ApiCard>,
 }
 
-/// Replaces the stored card data with `downloads`, in one transaction.
-fn store(path: &Path, version: &str, downloads: &[Download]) -> Result<(), CardDbError> {
+/// Stores `downloads` as YGOPRODeck's `version`, in one transaction, either replacing
+/// all stored card data or adding languages to it.
+fn store(
+    path: &Path,
+    version: &str,
+    downloads: &[Download],
+    replace: Replace,
+) -> Result<(), CardDbError> {
     let mut conn = connect(path)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    tx.execute("DELETE FROM cards", [])?;
-    tx.execute("DELETE FROM card_aliases", [])?;
+    let mut synced = match replace {
+        Replace::Yes => {
+            tx.execute("DELETE FROM cards", [])?;
+            tx.execute("DELETE FROM card_aliases", [])?;
+            Vec::new()
+        }
+        Replace::No => read_languages(&tx, SYNCED_LANGUAGES)?,
+    };
     insert_cards(&tx, downloads)?;
+    synced.extend(downloads.iter().map(|download| download.language));
     write_metadata(&tx, DATABASE_VERSION, version)?;
-    let synced: Vec<Language> = downloads.iter().map(|download| download.language).collect();
     write_languages(&tx, SYNCED_LANGUAGES, &synced)?;
     tx.commit()?;
     Ok(())
@@ -189,9 +244,8 @@ fn insert_cards(tx: &Transaction<'_>, downloads: &[Download]) -> Result<(), Card
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )?;
     // Every language lists the same artworks, so writing aliases twice is harmless.
-    let mut insert_alias = tx.prepare(
-        "INSERT OR REPLACE INTO card_aliases (image_id, passcode) VALUES (?1, ?2)",
-    )?;
+    let mut insert_alias =
+        tx.prepare("INSERT OR REPLACE INTO card_aliases (image_id, passcode) VALUES (?1, ?2)")?;
     for Download { language, cards } in downloads {
         for ApiCard {
             card,
@@ -223,11 +277,9 @@ fn insert_cards(tx: &Transaction<'_>, downloads: &[Download]) -> Result<(), Card
 
 fn read_metadata(conn: &Connection, key: &str) -> Result<Option<String>, CardDbError> {
     let value = conn
-        .query_row(
-            "SELECT value FROM metadata WHERE key = ?1",
-            [key],
-            |row| row.get(0),
-        )
+        .query_row("SELECT value FROM metadata WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
         .optional()?;
     Ok(value)
 }
@@ -248,7 +300,11 @@ fn read_languages(conn: &Connection, key: &str) -> Result<Vec<Language>, CardDbE
         .unwrap_or_default())
 }
 
-fn write_languages(conn: &Connection, key: &str, languages: &[Language]) -> Result<(), CardDbError> {
+fn write_languages(
+    conn: &Connection,
+    key: &str,
+    languages: &[Language],
+) -> Result<(), CardDbError> {
     let json = serde_json::to_string(languages).expect("languages serialize as strings");
     write_metadata(conn, key, &json)
 }

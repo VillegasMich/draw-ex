@@ -27,24 +27,29 @@ fn check_db_ver(version: &str) -> String {
 /// A mock YGOPRODeck serving the fixtures, with `version` as the `database_version`.
 async fn ygoprodeck(version: &str) -> MockServer {
     let server = MockServer::start().await;
+    serve_fixtures(&server, version).await;
+    server
+}
+
+/// Mounts the fixtures on `server`, with `version` as the `database_version`.
+async fn serve_fixtures(server: &MockServer, version: &str) {
     Mock::given(method("GET"))
         .and(path("/checkDBVer.php"))
         .respond_with(json(&check_db_ver(version)))
-        .mount(&server)
+        .mount(server)
         .await;
     Mock::given(method("GET"))
         .and(path("/cardinfo.php"))
         .and(query_param_is_missing("language"))
         .respond_with(json(CARDINFO_EN))
-        .mount(&server)
+        .mount(server)
         .await;
     Mock::given(method("GET"))
         .and(path("/cardinfo.php"))
         .and(query_param("language", "fr"))
         .respond_with(json(CARDINFO_FR))
-        .mount(&server)
+        .mount(server)
         .await;
-    server
 }
 
 /// A card database in a fresh temp dir, talking to `server`. Keep the `TempDir` alive.
@@ -253,5 +258,91 @@ async fn an_alternate_artwork_image_id_looks_up_the_card_it_belongs_to() {
     assert_eq!(
         db.get(DARK_MAGICIAN, Language::En).unwrap(),
         Some(dark_magician)
+    );
+}
+
+#[tokio::test]
+async fn a_second_sync_with_an_unchanged_database_version_makes_exactly_one_request() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    db.request_language(Language::Fr).unwrap();
+    db.sync(|_| {}).await.unwrap();
+    let before = requests_to(&server).await.len();
+
+    let outcome = db.sync(|_| {}).await.unwrap();
+
+    assert_eq!(
+        outcome,
+        SyncOutcome::UpToDate {
+            version: VERSION.into()
+        }
+    );
+    assert_eq!(requests_to(&server).await[before..], ["/checkDBVer.php"]);
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::Fr).unwrap(),
+        Some(ash_blossom_fr())
+    );
+}
+
+#[tokio::test]
+async fn a_changed_database_version_downloads_english_and_every_requested_language_again() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    db.request_language(Language::Fr).unwrap();
+    db.sync(|_| {}).await.unwrap();
+    server.reset().await;
+    serve_fixtures(&server, "147.89").await;
+
+    let outcome = db.sync(|_| {}).await.unwrap();
+
+    assert_eq!(
+        outcome,
+        SyncOutcome::Updated {
+            version: "147.89".into(),
+            card_count: 7,
+        }
+    );
+    assert_eq!(
+        requests_to(&server).await,
+        [
+            "/checkDBVer.php",
+            "/cardinfo.php",
+            "/cardinfo.php?language=fr"
+        ]
+    );
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::Fr).unwrap(),
+        Some(ash_blossom_fr())
+    );
+}
+
+#[tokio::test]
+async fn a_language_requested_after_a_sync_is_downloaded_alone_when_the_version_is_unchanged() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    db.sync(|_| {}).await.unwrap();
+    let before = requests_to(&server).await.len();
+
+    db.request_language(Language::Fr).unwrap();
+    let outcome = db.sync(|_| {}).await.unwrap();
+
+    assert_eq!(
+        outcome,
+        SyncOutcome::Updated {
+            version: VERSION.into(),
+            card_count: 2,
+        }
+    );
+    assert_eq!(
+        requests_to(&server).await[before..],
+        ["/checkDBVer.php", "/cardinfo.php?language=fr"]
+    );
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::Fr).unwrap(),
+        Some(ash_blossom_fr())
+    );
+    assert_eq!(
+        db.get(POT_OF_GREED, Language::Fr).unwrap(),
+        Some(pot_of_greed_en())
     );
 }

@@ -180,7 +180,11 @@ fn parse_card(raw_json: Box<RawValue>) -> Result<ApiCard, serde_json::Error> {
             atk: fields.atk.and_then(|value| u32::try_from(value).ok()),
             def: fields.def.and_then(|value| u32::try_from(value).ok()),
         },
-        image_ids: fields.card_images.into_iter().map(|image| image.id).collect(),
+        image_ids: fields
+            .card_images
+            .into_iter()
+            .map(|image| image.id)
+            .collect(),
         raw_json,
     })
 }
