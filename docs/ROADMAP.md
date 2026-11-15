@@ -361,7 +361,7 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   touch `src/App.svelte` only to mount its components into the existing regions. D1
   owns that file, so D3 rebases on D1 if D1 merges first.
 - **Scope**:
-  - Canvas boxes mapped through the video's letterbox.
+  - SVG boxes mapped through the video's letterbox.
   - A draggable split line.
   - Per-player panels: art, name, type, ATK/DEF, level/link, effect text.
   - A duel-log timeline.
