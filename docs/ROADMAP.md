@@ -266,9 +266,9 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - Storage: the fields `Card` needs as columns, plus each card's raw JSON for future
     use.
 - **Done when**:
-  - [ ] Sync runs against recorded fixtures (tests never hit the live API).
-  - [ ] A second sync with an unchanged `database_version` makes exactly one request.
-  - [ ] Lookup by passcode returns the localized fields.
+  - [x] Sync runs against recorded fixtures (tests never hit the live API).
+  - [x] A second sync with an unchanged `database_version` makes exactly one request.
+  - [x] Lookup by passcode returns the localized fields.
 
 #### B2: Image cache
 - **Branch**: `feat/card-db-images`. **Depends on**: B1 (limiter + client).
