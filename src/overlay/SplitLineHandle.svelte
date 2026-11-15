@@ -45,16 +45,21 @@
     const [ux, uy] = [dx / length, dy / length];
     // Long enough to cross the whole image from either end point.
     const reach = Math.hypot(image.width, image.height) * 2;
-    const mid = { x: (ends.from.x + ends.to.x) / 2, y: (ends.from.y + ends.to.y) / 2 };
+    // Side labels sit just inside the `from` end, clear of the cards mid-table, and run
+    // toward `to` so they stay inside the image.
+    const inset = 14;
+    const anchor = { x: ends.from.x + ux * inset, y: ends.from.y + uy * inset };
+    const textAnchor = ux < -0.3 ? 'end' : ux > 0.3 ? 'start' : 'middle';
     // The left of `from → to` as seen on screen (y down) is the direction (uy, -ux).
-    const offset = 28;
+    const offset = 16;
     return {
       x1: ends.from.x - ux * reach,
       y1: ends.from.y - uy * reach,
       x2: ends.to.x + ux * reach,
       y2: ends.to.y + uy * reach,
-      sideA: { x: mid.x + uy * offset, y: mid.y - ux * offset },
-      sideB: { x: mid.x - uy * offset, y: mid.y + ux * offset },
+      sideA: { x: anchor.x + uy * offset, y: anchor.y - ux * offset },
+      sideB: { x: anchor.x - uy * offset, y: anchor.y + ux * offset },
+      textAnchor,
     };
   });
 
@@ -110,8 +115,18 @@
     </defs>
     <g clip-path="url(#{clipId})">
       <line class="line" x1={geometry.x1} y1={geometry.y1} x2={geometry.x2} y2={geometry.y2} />
-      <text class="side player-a" x={geometry.sideA.x} y={geometry.sideA.y}>Player A</text>
-      <text class="side player-b" x={geometry.sideB.x} y={geometry.sideB.y}>Player B</text>
+      <text
+        class="side player-a"
+        x={geometry.sideA.x}
+        y={geometry.sideA.y}
+        text-anchor={geometry.textAnchor}>Player A</text
+      >
+      <text
+        class="side player-b"
+        x={geometry.sideB.x}
+        y={geometry.sideB.y}
+        text-anchor={geometry.textAnchor}>Player B</text
+      >
     </g>
     {#each ['from', 'to'] as const as end (end)}
       <circle
@@ -143,6 +158,8 @@
   svg {
     position: absolute;
     inset: 0;
+    /* The end handles sit on the image's edge; keep their outer half clickable. */
+    overflow: visible;
   }
 
   .line {
@@ -154,7 +171,6 @@
   .side {
     font-size: var(--font-size-sm);
     font-weight: 700;
-    text-anchor: middle;
     dominant-baseline: middle;
     paint-order: stroke;
     stroke: var(--overlay-label-halo);
