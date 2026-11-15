@@ -2,6 +2,7 @@
 //! re-run only when `checkDBVer.php` reports a new `database_version`.
 
 use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -62,7 +63,31 @@ pub enum SyncOutcome {
     },
 }
 
+/// How long a startup check of `checkDBVer.php` counts for: see [`CardDb::needs_check`].
+const CHECK_INTERVAL: Duration = Duration::from_hours(24);
+
 impl CardDb {
+    /// Whether a startup check is due at `now`: true if no sync has ever finished, or
+    /// the last finished sync is 24 hours or more before `now`, or after `now` (the clock
+    /// was set back).
+    ///
+    /// Call it on startup and run [`CardDb::sync`] only when it returns true. A manual
+    /// "Sync now" calls [`CardDb::sync`] directly, which always checks. A sync that
+    /// fails, for example offline, does not count, so the next startup checks again.
+    ///
+    /// # Errors
+    ///
+    /// [`CardDbError`] if the database cannot be read.
+    pub fn needs_check(&self, now: SystemTime) -> Result<bool, CardDbError> {
+        let Some(last_check) = read_last_check(&self.lock())? else {
+            return Ok(true);
+        };
+        Ok(match now.duration_since(last_check) {
+            Ok(elapsed) => elapsed >= CHECK_INTERVAL,
+            Err(_) => true,
+        })
+    }
+
     /// Adds `language` to the languages synced from now on, so the next
     /// [`CardDb::sync`] downloads it even when the `database_version` has not changed.
     /// English is always synced, so requesting it does nothing. The request is stored in
@@ -105,12 +130,17 @@ impl CardDb {
 
         on_progress(progress(SyncStage::CheckingVersion, 0, 1));
         let version = self.client.database_version().await?;
+        let checked_at = SystemTime::now();
         on_progress(progress(SyncStage::CheckingVersion, 1, 1));
 
         let path = self.path().to_owned();
         let state = blocking(move || SyncState::read(&path)).await?;
         let (languages, replace) = match state.plan(&version) {
-            Plan::UpToDate => return Ok(SyncOutcome::UpToDate { version }),
+            Plan::UpToDate => {
+                let path = self.path().to_owned();
+                blocking(move || write_last_check(&connect(&path)?, checked_at)).await?;
+                return Ok(SyncOutcome::UpToDate { version });
+            }
             Plan::Add(languages) => (languages, Replace::No),
             Plan::Replace(languages) => (languages, Replace::Yes),
         };
@@ -133,7 +163,7 @@ impl CardDb {
         on_progress(progress(SyncStage::Storing, 0, card_count));
         let path = self.path().to_owned();
         let stored_version = version.clone();
-        blocking(move || store(&path, &stored_version, &downloads, replace)).await?;
+        blocking(move || store(&path, &stored_version, &downloads, replace, checked_at)).await?;
         on_progress(progress(SyncStage::Storing, card_count, card_count));
 
         Ok(SyncOutcome::Updated {
@@ -149,6 +179,9 @@ const DATABASE_VERSION: &str = "database_version";
 const REQUESTED_LANGUAGES: &str = "requested_languages";
 /// The languages stored for `database_version`, as a JSON array of codes.
 const SYNCED_LANGUAGES: &str = "synced_languages";
+/// When the last successful sync checked `checkDBVer.php`, in milliseconds since the
+/// Unix epoch.
+const LAST_CHECK: &str = "last_check_ms";
 
 /// What the database holds, as far as a sync needs to know.
 struct SyncState {
@@ -218,6 +251,7 @@ fn store(
     version: &str,
     downloads: &[Download],
     replace: Replace,
+    checked_at: SystemTime,
 ) -> Result<(), CardDbError> {
     let mut conn = connect(path)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -233,6 +267,7 @@ fn store(
     synced.extend(downloads.iter().map(|download| download.language));
     write_metadata(&tx, DATABASE_VERSION, version)?;
     write_languages(&tx, SYNCED_LANGUAGES, &synced)?;
+    write_last_check(&tx, checked_at)?;
     tx.commit()?;
     Ok(())
 }
@@ -290,6 +325,21 @@ fn write_metadata(conn: &Connection, key: &str, value: &str) -> Result<(), CardD
         params![key, value],
     )?;
     Ok(())
+}
+
+fn read_last_check(conn: &Connection) -> Result<Option<SystemTime>, CardDbError> {
+    // Written only by `write_last_check`; anything unparsable counts as never checked.
+    Ok(read_metadata(conn, LAST_CHECK)?
+        .and_then(|millis| millis.parse().ok())
+        .map(|millis| UNIX_EPOCH + Duration::from_millis(millis)))
+}
+
+fn write_last_check(conn: &Connection, checked_at: SystemTime) -> Result<(), CardDbError> {
+    // A clock before 1970 is stored as the epoch, which makes the next check due.
+    let millis = checked_at
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since_epoch| since_epoch.as_millis());
+    write_metadata(conn, LAST_CHECK, &millis.to_string())
 }
 
 fn read_languages(conn: &Connection, key: &str) -> Result<Vec<Language>, CardDbError> {

@@ -1,7 +1,9 @@
 //! `CardDb` sync and lookups, against a `wiremock` server serving recorded YGOPRODeck
 //! fixtures (see `fixtures/README.md`). No test reaches the live API.
 
-use card_db::{Card, CardDb, Language, SyncOutcome};
+use std::time::{Duration, Instant, SystemTime};
+
+use card_db::{Card, CardDb, Language, SyncOutcome, SyncProgress, SyncStage};
 use domain::Passcode;
 use tempfile::TempDir;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
@@ -79,6 +81,10 @@ async fn requests_to(server: &MockServer) -> Vec<String> {
         .collect()
 }
 
+fn step(stage: SyncStage, done: u32, total: u32) -> SyncProgress {
+    SyncProgress { stage, done, total }
+}
+
 fn ash_blossom_en() -> Card {
     Card {
         passcode: ASH_BLOSSOM,
@@ -106,7 +112,8 @@ async fn sync_stores_english_card_data_that_get_returns() {
     let server = ygoprodeck(VERSION).await;
     let (_dir, db) = open_db(&server);
 
-    let outcome = db.sync(|_| {}).await.unwrap();
+    let mut progress = Vec::new();
+    let outcome = db.sync(|step| progress.push(step)).await.unwrap();
 
     assert_eq!(
         outcome,
@@ -114,6 +121,17 @@ async fn sync_stores_english_card_data_that_get_returns() {
             version: VERSION.into(),
             card_count: 5,
         }
+    );
+    assert_eq!(
+        progress,
+        [
+            step(SyncStage::CheckingVersion, 0, 1),
+            step(SyncStage::CheckingVersion, 1, 1),
+            step(SyncStage::Downloading, 0, 1),
+            step(SyncStage::Downloading, 1, 1),
+            step(SyncStage::Storing, 0, 5),
+            step(SyncStage::Storing, 5, 5),
+        ]
     );
     assert_eq!(
         db.get(ASH_BLOSSOM, Language::En).unwrap(),
@@ -269,13 +287,21 @@ async fn a_second_sync_with_an_unchanged_database_version_makes_exactly_one_requ
     db.sync(|_| {}).await.unwrap();
     let before = requests_to(&server).await.len();
 
-    let outcome = db.sync(|_| {}).await.unwrap();
+    let mut progress = Vec::new();
+    let outcome = db.sync(|step| progress.push(step)).await.unwrap();
 
     assert_eq!(
         outcome,
         SyncOutcome::UpToDate {
             version: VERSION.into()
         }
+    );
+    assert_eq!(
+        progress,
+        [
+            step(SyncStage::CheckingVersion, 0, 1),
+            step(SyncStage::CheckingVersion, 1, 1),
+        ]
     );
     assert_eq!(requests_to(&server).await[before..], ["/checkDBVer.php"]);
     assert_eq!(
@@ -344,5 +370,142 @@ async fn a_language_requested_after_a_sync_is_downloaded_alone_when_the_version_
     assert_eq!(
         db.get(POT_OF_GREED, Language::Fr).unwrap(),
         Some(pot_of_greed_en())
+    );
+}
+
+#[tokio::test]
+async fn a_failed_download_leaves_the_stored_card_data_intact_and_usable() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    db.request_language(Language::Fr).unwrap();
+    db.sync(|_| {}).await.unwrap();
+    // A new version whose French download fails after English succeeded.
+    server.reset().await;
+    Mock::given(path("/cardinfo.php"))
+        .and(query_param("language", "fr"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    serve_fixtures(&server, "147.89").await;
+
+    let result = db.sync(|_| {}).await;
+
+    assert!(result.is_err(), "sync succeeded: {result:?}");
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::Fr).unwrap(),
+        Some(ash_blossom_fr())
+    );
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::En).unwrap(),
+        Some(ash_blossom_en())
+    );
+}
+
+#[tokio::test]
+async fn an_unreachable_ygoprodeck_fails_the_sync_and_the_stored_card_data_stays_usable() {
+    let server = ygoprodeck(VERSION).await;
+    let dir = TempDir::new().unwrap();
+    open_in(&dir, &server).sync(|_| {}).await.unwrap();
+    let db =
+        CardDb::open_with_base_url(dir.path().join("cards.db"), &unreachable_base_url()).unwrap();
+    let result = db.sync(|_| {}).await;
+
+    assert!(result.is_err(), "sync succeeded: {result:?}");
+    assert_eq!(
+        db.get(ASH_BLOSSOM, Language::En).unwrap(),
+        Some(ash_blossom_en())
+    );
+}
+
+const HOUR: Duration = Duration::from_secs(60 * 60);
+
+/// A base URL where connections are refused.
+fn unreachable_base_url() -> String {
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    format!("http://{}", closed.local_addr().unwrap())
+}
+
+#[tokio::test]
+async fn a_database_never_checked_needs_a_check() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+
+    assert!(db.needs_check(SystemTime::now()).unwrap());
+}
+
+#[tokio::test]
+async fn a_check_is_not_needed_within_24_hours_of_a_sync_and_is_needed_after() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    let before = SystemTime::now();
+    db.sync(|_| {}).await.unwrap();
+    let after = SystemTime::now();
+
+    assert!(!db.needs_check(before + 23 * HOUR).unwrap());
+    assert!(db.needs_check(after + 24 * HOUR).unwrap());
+}
+
+#[tokio::test]
+async fn sync_now_checks_the_database_version_even_within_24_hours() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    db.sync(|_| {}).await.unwrap();
+    assert!(!db.needs_check(SystemTime::now()).unwrap());
+    let before = requests_to(&server).await.len();
+
+    db.sync(|_| {}).await.unwrap();
+
+    assert_eq!(requests_to(&server).await[before..], ["/checkDBVer.php"]);
+}
+
+#[tokio::test]
+async fn an_up_to_date_sync_restarts_the_24_hours() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    db.sync(|_| {}).await.unwrap();
+    let before_second = SystemTime::now();
+
+    db.sync(|_| {}).await.unwrap();
+
+    assert!(!db.needs_check(before_second + 23 * HOUR).unwrap());
+}
+
+#[tokio::test]
+async fn a_failed_check_does_not_count_as_a_check() {
+    let dir = TempDir::new().unwrap();
+    let db =
+        CardDb::open_with_base_url(dir.path().join("cards.db"), &unreachable_base_url()).unwrap();
+
+    assert!(db.sync(|_| {}).await.is_err());
+
+    assert!(db.needs_check(SystemTime::now()).unwrap());
+}
+
+#[tokio::test]
+async fn a_last_check_in_the_future_needs_a_check() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    let before = SystemTime::now();
+    db.sync(|_| {}).await.unwrap();
+
+    // The clock was set back after the last check.
+    assert!(db.needs_check(before - HOUR).unwrap());
+}
+
+#[tokio::test]
+async fn sync_requests_are_spaced_by_the_shared_rate_limiter() {
+    let server = ygoprodeck(VERSION).await;
+    let (_dir, db) = open_db(&server);
+    db.request_language(Language::Fr).unwrap();
+    let start = Instant::now();
+
+    db.sync(|_| {}).await.unwrap();
+
+    // 3 requests at 10 per second, with no burst: at least 2 gaps of 100 ms.
+    assert_eq!(requests_to(&server).await.len(), 3);
+    assert!(
+        start.elapsed() >= Duration::from_millis(200),
+        "3 requests took only {:?}",
+        start.elapsed()
     );
 }

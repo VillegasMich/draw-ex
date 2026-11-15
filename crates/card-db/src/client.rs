@@ -62,6 +62,13 @@ impl Client {
         })
     }
 
+    /// The rate limiter every YGOPRODeck request waits on. The image cache shares it, so
+    /// card data and image downloads together stay under the limit.
+    #[expect(dead_code, reason = "used by the image cache (B2)")]
+    pub(crate) fn limiter(&self) -> &Arc<RateLimiter> {
+        &self.limiter
+    }
+
     /// YGOPRODeck's current `database_version`, from `checkDBVer.php`.
     pub(crate) async fn database_version(&self) -> Result<String, CardDbError> {
         #[derive(Deserialize)]
