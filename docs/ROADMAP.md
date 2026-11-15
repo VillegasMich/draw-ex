@@ -381,8 +381,8 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
     events with time and player.
   - Interface text is English. Card names follow the language setting.
 - **Done when**:
-  - [ ] Boxes line up with the cards at any window size.
-  - [ ] Panels update on fake `Confirmed` and `Lost` events.
+  - [x] Boxes line up with the cards at any window size.
+  - [x] Panels update on fake `Confirmed` and `Lost` events.
 
 #### D4: First run, settings, cache screens
 - **Branch**: `feat/settings-models`. **Owns**: `src/settings/`, `src-tauri/src/models/`,
