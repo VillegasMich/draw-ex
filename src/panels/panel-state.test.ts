@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { TrackEvent } from '../lib/bindings';
-import { applyTrackEvent, emptyPanels, featureTrack } from './panel-state';
+import {
+  applyTrackEvent,
+  emptyPanels,
+  featuredCard,
+  featureTrack,
+  listedCards,
+} from './panel-state';
 
 const MONSTER_REBORN = 83764719;
 const ASH_BLOSSOM = 14558127;
@@ -135,5 +141,24 @@ describe('panel state', () => {
 
     expect(state.b).toBe(playerB);
     expect(state.a.leftTheTable.map((card) => card.track)).toEqual([2]);
+  });
+
+  it('a track lost twice appears once in "Left the table"', () => {
+    let state = applyTrackEvent(emptyPanels(), confirmed(1, 'a', MONSTER_REBORN, 100));
+    state = applyTrackEvent(state, lost(1, 'a', MONSTER_REBORN, 200));
+    state = applyTrackEvent(state, lost(1, 'a', MONSTER_REBORN, 300));
+
+    expect(state.a.leftTheTable).toEqual([{ track: 1, passcode: MONSTER_REBORN, timeMs: 300 }]);
+  });
+
+  it('lists the featured card apart from the other cards on the table', () => {
+    let state = applyTrackEvent(emptyPanels(), confirmed(1, 'a', MONSTER_REBORN, 100));
+    state = applyTrackEvent(state, confirmed(2, 'a', ASH_BLOSSOM, 200));
+    state = applyTrackEvent(state, confirmed(3, 'a', POT_OF_GREED, 300));
+    state = featureTrack(state, 'a', 2);
+
+    expect(featuredCard(state.a)?.track).toBe(2);
+    expect(listedCards(state.a).map((card) => card.track)).toEqual([3, 1]);
+    expect(featuredCard(emptyPanels().a)).toBeUndefined();
   });
 });

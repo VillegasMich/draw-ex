@@ -16,18 +16,18 @@ function square(cx: number, cy: number): Quad {
 
 describe('split line from drag', () => {
   it('turns element-space end points into a split line in frame pixels', () => {
-    const box = letterbox(FRAME, { width: 1200, height: 540 });
+    const fit = letterbox(FRAME, { width: 1200, height: 540 });
 
-    expect(splitLineFromDrag({ x: 1080, y: 270 }, { x: 120, y: 270 }, box)).toEqual({
+    expect(splitLineFromDrag({ x: 1080, y: 270 }, { x: 120, y: 270 }, fit)).toEqual({
       from: { x: 1920, y: 540 },
       to: { x: 0, y: 540 },
     });
   });
 
   it('maps through the bars of a taller element', () => {
-    const box = letterbox(FRAME, { width: 960, height: 960 });
+    const fit = letterbox(FRAME, { width: 960, height: 960 });
 
-    expect(splitLineFromDrag({ x: 0, y: 210 }, { x: 960, y: 750 }, box)).toEqual({
+    expect(splitLineFromDrag({ x: 0, y: 210 }, { x: 960, y: 750 }, fit)).toEqual({
       from: { x: 0, y: 0 },
       to: { x: 1920, y: 1080 },
     });

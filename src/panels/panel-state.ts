@@ -63,7 +63,10 @@ function applyToPlayer(panel: PlayerPanelState, event: TrackEvent): PlayerPanelS
       return {
         onTable,
         featured,
-        leftTheTable: [left, ...panel.leftTheTable].slice(0, LEFT_THE_TABLE_LIMIT),
+        leftTheTable: [
+          left,
+          ...panel.leftTheTable.filter((card) => card.track !== event.track),
+        ].slice(0, LEFT_THE_TABLE_LIMIT),
       };
     }
   }
@@ -79,4 +82,14 @@ export function featureTrack(state: PanelState, player: Player, track: TrackId):
     return state;
   }
   return { ...state, [player]: { ...panel, featured: track } };
+}
+
+/** The player's featured card, or `undefined` when nothing is on their table. */
+export function featuredCard(panel: PlayerPanelState): TableCard | undefined {
+  return panel.onTable.find((card) => card.track === panel.featured);
+}
+
+/** The player's other cards on the table, newest first: the panel's compact list. */
+export function listedCards(panel: PlayerPanelState): TableCard[] {
+  return panel.onTable.filter((card) => card.track !== panel.featured);
 }

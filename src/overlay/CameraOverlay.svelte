@@ -1,11 +1,11 @@
 <!--
   Everything drawn over the camera on screen: detection outlines and, for a "both sides"
-  setup, the split line handle. It fills its positioned parent, the box the `<video>`
+  setup, the split line handle. It fills its positioned parent, the area the `<video>`
   fills with `object-fit: contain`. In dev builds it also offers the scripted demo.
 -->
 <script lang="ts">
   import { liveView } from './live-view.svelte';
-  import Overlay from './Overlay.svelte';
+  import DetectionOverlay from './DetectionOverlay.svelte';
   import SplitLineHandle from './SplitLineHandle.svelte';
 
   // Dev only: in a production build this is `null` and the demo module is not bundled.
@@ -21,7 +21,7 @@
 
   {#if liveView.camera !== null}
     {@const camera = liveView.camera}
-    <Overlay
+    <DetectionOverlay
       frame={liveView.frame}
       {camera}
       setup={liveView.setup}

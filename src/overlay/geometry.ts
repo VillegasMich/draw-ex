@@ -32,11 +32,11 @@ export function letterbox(frame: Size, element: Size): Letterbox {
 }
 
 /** A point in frame pixels, in element pixels. */
-export function frameToElement(point: Point, box: Letterbox): Point {
-  return { x: box.offsetX + point.x * box.scale, y: box.offsetY + point.y * box.scale };
+export function frameToElement(point: Point, fit: Letterbox): Point {
+  return { x: fit.offsetX + point.x * fit.scale, y: fit.offsetY + point.y * fit.scale };
 }
 
 /** A point in element pixels, in frame pixels. The inverse of {@link frameToElement}. */
-export function elementToFrame(point: Point, box: Letterbox): Point {
-  return { x: (point.x - box.offsetX) / box.scale, y: (point.y - box.offsetY) / box.scale };
+export function elementToFrame(point: Point, fit: Letterbox): Point {
+  return { x: (point.x - fit.offsetX) / fit.scale, y: (point.y - fit.offsetY) / fit.scale };
 }

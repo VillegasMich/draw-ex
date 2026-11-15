@@ -4,7 +4,7 @@
 -->
 <script lang="ts">
   import '../overlay/player-colors.css';
-  import type { TrackEvent } from '../lib/bindings';
+  import type { Passcode, TrackEvent } from '../lib/bindings';
   import { cardData, cardName } from './card-data.svelte';
 
   interface Props {
@@ -25,7 +25,7 @@
     return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
   }
 
-  const name = (passcode: number) => cardName(passcode, cardData.get(passcode));
+  const name = (passcode: Passcode) => cardName(passcode, cardData.get(passcode));
 
   function describe(event: TrackEvent): string {
     switch (event.kind) {

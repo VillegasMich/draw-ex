@@ -14,8 +14,8 @@ export function defaultSplitLine(frame: Size): SplitLine {
 }
 
 /** The split line, in frame pixels, for end points dragged to in element pixels. */
-export function splitLineFromDrag(from: Point, to: Point, box: Letterbox): SplitLine {
-  return { from: elementToFrame(from, box), to: elementToFrame(to, box) };
+export function splitLineFromDrag(from: Point, to: Point, fit: Letterbox): SplitLine {
+  return { from: elementToFrame(from, fit), to: elementToFrame(to, fit) };
 }
 
 /**

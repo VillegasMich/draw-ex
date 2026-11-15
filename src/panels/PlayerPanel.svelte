@@ -7,7 +7,7 @@
   import type { TrackId } from '../lib/bindings';
   import CardImage from './CardImage.svelte';
   import { cardData, cardName, cardStats, cardTypeLine } from './card-data.svelte';
-  import type { PlayerPanelState } from './panel-state';
+  import { featuredCard, listedCards, type PlayerPanelState } from './panel-state';
 
   interface Props {
     panel: PlayerPanelState;
@@ -17,9 +17,9 @@
 
   let { panel, onfeature }: Props = $props();
 
-  const featured = $derived(panel.onTable.find((card) => card.track === panel.featured));
-  const others = $derived(panel.onTable.filter((card) => card.track !== panel.featured));
-  const featuredCard = $derived(featured ? cardData.get(featured.passcode) : undefined);
+  const featured = $derived(featuredCard(panel));
+  const others = $derived(listedCards(panel));
+  const featuredData = $derived(featured ? cardData.get(featured.passcode) : undefined);
   const uid = $props.id();
 </script>
 
@@ -34,17 +34,17 @@
         <CardImage
           passcode={featured.passcode}
           size="full"
-          alt={cardName(featured.passcode, featuredCard)}
+          alt={cardName(featured.passcode, featuredData)}
         />
       </div>
-      <h3 class="name">{cardName(featured.passcode, featuredCard)}</h3>
-      {#if featuredCard}
-        {@const stats = cardStats(featuredCard)}
-        <p class="type">{cardTypeLine(featuredCard)}</p>
+      <h3 class="name">{cardName(featured.passcode, featuredData)}</h3>
+      {#if featuredData}
+        {@const stats = cardStats(featuredData)}
+        <p class="type">{cardTypeLine(featuredData)}</p>
         {#if stats}
           <p class="stats">{stats}</p>
         {/if}
-        <p class="description">{featuredCard.description}</p>
+        <p class="description">{featuredData.description}</p>
       {/if}
     </article>
   {/if}

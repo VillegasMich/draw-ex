@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CameraSetup, DetectionDto, Quad } from '../lib/bindings';
 import { commands } from '../lib/bindings';
-import Overlay from './Overlay.svelte';
+import DetectionOverlay from './DetectionOverlay.svelte';
 
 vi.mock('../lib/bindings', () => ({
   commands: { getCard: vi.fn(), getSettings: vi.fn() },
@@ -64,7 +64,7 @@ beforeEach(() => {
 });
 
 function renderOverlay() {
-  return render(Overlay, {
+  return render(DetectionOverlay, {
     frame: { width: 1920, height: 1080 },
     camera: 'cam-1',
     setup: SETUP,
@@ -72,7 +72,7 @@ function renderOverlay() {
   });
 }
 
-describe('Overlay', () => {
+describe('DetectionOverlay', () => {
   it('outlines every detection: player color when recognized, neutral otherwise', async () => {
     const { container } = renderOverlay();
 

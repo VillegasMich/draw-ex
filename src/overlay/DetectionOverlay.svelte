@@ -1,8 +1,9 @@
 <!--
   Detection outlines over one camera's video. It fills its positioned parent, the same
-  box as the `<video>`, which must use `object-fit: contain`: frame pixels are mapped
+  area as the `<video>`, which must use `object-fit: contain`: frame pixels are mapped
   through that letterbox so outlines stay on the cards at any size. Recognized cards are
   outlined in their player's color and labelled; the rest get a thin neutral outline.
+  Its toggle hides only these outlines: the split line is a setup control and stays.
 -->
 <script lang="ts">
   import './player-colors.css';
@@ -26,28 +27,37 @@
   let height = $state(0);
   let visible = $state(true);
 
-  const box = $derived(letterbox(frame, { width, height }));
+  const fit = $derived(letterbox(frame, { width, height }));
 
+  /** How an outline is drawn: in a player's color, or as unassigned or unrecognized. */
+  type Tone = Player | 'unassigned' | 'unrecognized';
+
+  /** One detection as drawn. Positions are in element pixels. */
   interface Outline {
+    /** The quad's corners, as an SVG `points` list. */
     points: string;
-    tone: Player | 'unassigned' | 'unrecognized';
+    /** The CSS class giving the outline's and label's color. */
+    tone: string;
+    /** The card name, centered above the quad, once recognized. */
     label: { text: string; x: number; y: number } | null;
   }
 
+  const toneClass = (tone: Tone) => (tone === 'a' || tone === 'b' ? `player-${tone}` : tone);
+
   const outlines: Outline[] = $derived(
     detections.map((detection) => {
-      const corners = detection.quad.map((corner) => frameToElement(corner, box));
+      const corners = detection.quad.map((corner) => frameToElement(corner, fit));
       const points = corners.map(({ x, y }) => `${x},${y}`).join(' ');
       const { recognition } = detection;
       if (recognition.kind !== 'recognized') {
-        return { points, tone: 'unrecognized', label: null };
+        return { points, tone: toneClass('unrecognized'), label: null };
       }
       const top = Math.min(...corners.map((corner) => corner.y));
       const left = Math.min(...corners.map((corner) => corner.x));
       const right = Math.max(...corners.map((corner) => corner.x));
       return {
         points,
-        tone: playerForQuad(setup, camera, detection.quad) ?? 'unassigned',
+        tone: toneClass(playerForQuad(setup, camera, detection.quad) ?? 'unassigned'),
         label: {
           text: cardName(recognition.passcode, cardData.get(recognition.passcode)),
           x: (left + right) / 2,
@@ -62,19 +72,10 @@
   {#if visible}
     <svg class="outlines" {width} {height} aria-hidden="true">
       {#each outlines as outline, index (index)}
-        <polygon
-          class={outline.tone === 'a' || outline.tone === 'b'
-            ? `outline player-${outline.tone}`
-            : `outline ${outline.tone}`}
-          points={outline.points}
-        />
+        <polygon class="outline {outline.tone}" points={outline.points} />
         {#if outline.label}
-          <text
-            class="label {outline.tone === 'a' || outline.tone === 'b'
-              ? `player-${outline.tone}`
-              : outline.tone}"
-            x={outline.label.x}
-            y={outline.label.y}>{outline.label.text}</text
+          <text class="label {outline.tone}" x={outline.label.x} y={outline.label.y}
+            >{outline.label.text}</text
           >
         {/if}
       {/each}
