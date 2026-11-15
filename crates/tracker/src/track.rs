@@ -5,6 +5,7 @@ use domain::{CameraId, Passcode, Player, Quad};
 use serde::{Deserialize, Serialize};
 
 use crate::CameraSetup;
+use crate::vote::{Vote, VoteWindow};
 
 /// One detection as the tracker receives it: where a card was seen, by which camera,
 /// when, and what it might be.
@@ -100,19 +101,36 @@ pub enum TrackEvent {
 }
 
 /// Thresholds for associating, confirming and closing tracks.
+///
+/// [`TrackerConfig::default`] gives the decided defaults (docs/ROADMAP.md, C1).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct TrackerConfig {
-    /// Minimum number of votes the leading passcode needs before the track is confirmed.
+    /// How many of a track's most recent observations take part in its vote. Default 5.
+    pub window_size: u32,
+    /// Minimum number of votes in the window the leading passcode needs to win.
+    /// Default 3.
     pub min_votes: u32,
-    /// Minimum lead of the leading passcode's vote weight over the runner-up's, as a
-    /// fraction of the total vote weight, from 0 to 1.
+    /// Minimum ratio of the leading passcode's summed score to the runner-up's summed
+    /// score (an absent runner-up counts as 0). Default 1.5.
     #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub min_margin: f32,
     /// How long a track may go unseen before it is closed, in milliseconds.
+    /// Default 2000.
     #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub grace_ms: f64,
+}
+
+impl Default for TrackerConfig {
+    fn default() -> Self {
+        Self {
+            window_size: 5,
+            min_votes: 3,
+            min_margin: 1.5,
+            grace_ms: 2000.0,
+        }
+    }
 }
 
 /// Follows cards across frames, confirms their identity and assigns them to players.
@@ -121,29 +139,77 @@ pub struct TrackerConfig {
 /// regularly so tracks that are no longer seen are closed.
 #[derive(Debug)]
 pub struct Tracker {
-    // Replaced by the real state in C1.
-    _placeholder: (),
+    config: TrackerConfig,
+    setup: CameraSetup,
+    /// Open tracks, in creation order (so by increasing ID).
+    tracks: Vec<Track>,
+    next_id: u64,
+}
+
+/// One physical card followed across frames of one camera.
+#[derive(Debug)]
+struct Track {
+    id: TrackId,
+    camera: CameraId,
+    /// The quad of the latest observation.
+    quad: Quad,
+    last_seen_ms: f64,
+    votes: VoteWindow,
+    /// Set once the track is confirmed: the card's player and current identity.
+    confirmed: Option<(Player, Passcode)>,
 }
 
 impl Tracker {
     /// Creates a tracker with no tracks.
     #[must_use]
     pub fn new(config: TrackerConfig, setup: CameraSetup) -> Self {
-        let _ = (config, setup);
-        todo!("C1")
+        Self {
+            config,
+            setup,
+            tracks: Vec::new(),
+            next_id: 1,
+        }
     }
 
     /// Replaces the camera setup. Existing tracks keep their player; new confirmations
     /// use `setup`.
     pub fn set_setup(&mut self, setup: CameraSetup) {
-        let _ = setup;
-        todo!("C1")
+        self.setup = setup;
     }
 
     /// Adds one observation and returns the events it caused, in order.
     pub fn observe(&mut self, observation: Observation) -> Vec<TrackEvent> {
-        let _ = observation;
-        todo!("C1")
+        let index = match self
+            .tracks
+            .iter()
+            .position(|track| track.camera == observation.camera)
+        {
+            Some(index) => index,
+            None => self.start_track(&observation),
+        };
+
+        let config = self.config;
+        let player = player_for(&self.setup, &observation);
+        let track = &mut self.tracks[index];
+        track.quad = observation.quad;
+        track.last_seen_ms = observation.time_ms;
+        track.votes.push(vote_of(&observation));
+
+        let Some(winner) = track.votes.winner(config.min_votes, config.min_margin) else {
+            return Vec::new();
+        };
+        match track.confirmed {
+            None => {
+                track.confirmed = Some((player, winner));
+                vec![TrackEvent::Confirmed {
+                    track: track.id,
+                    player,
+                    passcode: winner,
+                    time_ms: observation.time_ms,
+                }]
+            }
+            Some(_) => Vec::new(),
+        }
     }
 
     /// Closes tracks unseen for longer than the grace period as of `now_ms`
@@ -151,7 +217,42 @@ impl Tracker {
     /// [`TrackEvent::Lost`] events.
     pub fn tick(&mut self, now_ms: f64) -> Vec<TrackEvent> {
         let _ = now_ms;
-        todo!("C1")
+        Vec::new()
+    }
+
+    /// Opens a new, unconfirmed track for `observation` and returns its index.
+    fn start_track(&mut self, observation: &Observation) -> usize {
+        let id = TrackId(self.next_id);
+        self.next_id += 1;
+        self.tracks.push(Track {
+            id,
+            camera: observation.camera.clone(),
+            quad: observation.quad,
+            last_seen_ms: observation.time_ms,
+            votes: VoteWindow::new(self.config.window_size as usize),
+            confirmed: None,
+        });
+        self.tracks.len() - 1
+    }
+}
+
+/// The observation's vote: the recognized passcode with its candidate score.
+fn vote_of(observation: &Observation) -> Option<Vote> {
+    let passcode = observation.recognized?;
+    let score = observation
+        .candidates
+        .iter()
+        .find(|candidate| candidate.passcode == passcode)
+        .map_or(0.0, |candidate| candidate.score);
+    Some(Vote { passcode, score })
+}
+
+/// The player a card seen in `observation` belongs to under `setup`.
+fn player_for(setup: &CameraSetup, observation: &Observation) -> Player {
+    let _ = observation;
+    match setup {
+        CameraSetup::OneSide { player, .. } => *player,
+        CameraSetup::SplitLine { .. } | CameraSetup::TwoCameras { .. } => Player::A,
     }
 }
 
@@ -220,5 +321,80 @@ mod tests {
                 event
             );
         }
+    }
+
+    const MONSTER_REBORN: Passcode = Passcode(83_764_719);
+
+    fn camera(id: &str) -> CameraId {
+        CameraId(id.into())
+    }
+
+    fn one_side_tracker() -> Tracker {
+        Tracker::new(
+            TrackerConfig::default(),
+            CameraSetup::OneSide {
+                camera: camera("cam"),
+                player: Player::A,
+            },
+        )
+    }
+
+    /// An upright 100 × 140 px card whose top-left corner is at (`x`, `y`).
+    fn card_at(x: f32, y: f32) -> Quad {
+        let point = |dx: f32, dy: f32| domain::Point {
+            x: x + dx,
+            y: y + dy,
+        };
+        Quad([
+            point(0.0, 0.0),
+            point(100.0, 0.0),
+            point(100.0, 140.0),
+            point(0.0, 140.0),
+        ])
+    }
+
+    /// An observation from `cam` recognized as `passcode` with score 0.9, or an
+    /// unrecognized one when `passcode` is `None`.
+    fn seen(quad: Quad, passcode: Option<Passcode>, time_ms: f64) -> Observation {
+        seen_by("cam", quad, passcode, time_ms)
+    }
+
+    fn seen_by(cam: &str, quad: Quad, passcode: Option<Passcode>, time_ms: f64) -> Observation {
+        Observation {
+            camera: camera(cam),
+            quad,
+            candidates: passcode
+                .map(|passcode| ObservedCandidate {
+                    passcode,
+                    score: 0.9,
+                })
+                .into_iter()
+                .collect(),
+            recognized: passcode,
+            time_ms,
+        }
+    }
+
+    #[test]
+    fn steady_card_is_confirmed_on_its_third_matching_observation() {
+        let mut tracker = one_side_tracker();
+        let quad = card_at(200.0, 300.0);
+
+        assert_eq!(tracker.observe(seen(quad, Some(MONSTER_REBORN), 0.0)), []);
+        assert_eq!(tracker.observe(seen(quad, Some(MONSTER_REBORN), 100.0)), []);
+        assert_eq!(
+            tracker.observe(seen(quad, Some(MONSTER_REBORN), 200.0)),
+            [TrackEvent::Confirmed {
+                track: TrackId(1),
+                player: Player::A,
+                passcode: MONSTER_REBORN,
+                time_ms: 200.0,
+            }]
+        );
+        assert_eq!(
+            tracker.observe(seen(quad, Some(MONSTER_REBORN), 300.0)),
+            [],
+            "a track is confirmed once"
+        );
     }
 }
