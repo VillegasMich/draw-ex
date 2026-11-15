@@ -215,6 +215,17 @@ impl Tracker {
                     time_ms: observation.time_ms,
                 }]
             }
+            // Sticky identity: only a different passcode winning the vote changes it.
+            Some((player, from)) if from != winner => {
+                track.confirmed = Some((player, winner));
+                vec![TrackEvent::Changed {
+                    track: track.id,
+                    player,
+                    from,
+                    to: winner,
+                    time_ms: observation.time_ms,
+                }]
+            }
             Some(_) => Vec::new(),
         }
     }
@@ -424,6 +435,7 @@ mod tests {
     }
 
     const MONSTER_REBORN: Passcode = Passcode(83_764_719);
+    const POT_OF_GREED: Passcode = Passcode(55_144_522);
 
     fn camera(id: &str) -> CameraId {
         CameraId(id.into())
@@ -576,6 +588,102 @@ mod tests {
                 passcode: MONSTER_REBORN,
                 time_ms: 200.0,
             }]
+        );
+    }
+
+    /// Observes `passcodes` in order at `quad`, one frame every 100 ms from `start_ms`,
+    /// and returns every event.
+    fn observe_sequence(
+        tracker: &mut Tracker,
+        quad: Quad,
+        start_ms: f64,
+        passcodes: &[Option<Passcode>],
+    ) -> Vec<TrackEvent> {
+        passcodes
+            .iter()
+            .zip(0_u32..)
+            .flat_map(|(&passcode, frame)| {
+                tracker.observe(seen(quad, passcode, start_ms + f64::from(frame) * 100.0))
+            })
+            .collect()
+    }
+
+    fn confirmed_monster_reborn(time_ms: f64) -> TrackEvent {
+        TrackEvent::Confirmed {
+            track: TrackId(1),
+            player: Player::A,
+            passcode: MONSTER_REBORN,
+            time_ms,
+        }
+    }
+
+    #[test]
+    fn one_misread_frame_does_not_change_a_confirmed_card() {
+        let mut tracker = one_side_tracker();
+        let (reborn, greed) = (Some(MONSTER_REBORN), Some(POT_OF_GREED));
+
+        let events = observe_sequence(
+            &mut tracker,
+            card_at(200.0, 300.0),
+            0.0,
+            &[reborn, reborn, reborn, greed, reborn, reborn, greed, reborn],
+        );
+
+        assert_eq!(events, [confirmed_monster_reborn(200.0)]);
+    }
+
+    #[test]
+    fn face_down_observations_keep_a_confirmed_identity() {
+        let mut tracker = one_side_tracker();
+        let reborn = Some(MONSTER_REBORN);
+
+        let events = observe_sequence(
+            &mut tracker,
+            card_at(200.0, 300.0),
+            0.0,
+            &[reborn, reborn, reborn, None, None, None, None, None, None],
+        );
+
+        assert_eq!(events, [confirmed_monster_reborn(200.0)]);
+    }
+
+    #[test]
+    fn card_face_down_from_the_start_is_never_confirmed() {
+        let mut tracker = one_side_tracker();
+
+        let events = observe_sequence(&mut tracker, card_at(200.0, 300.0), 0.0, &[None; 20]);
+
+        assert_eq!(events, []);
+    }
+
+    #[test]
+    fn swap_in_place_emits_changed_once_the_new_card_meets_the_rule() {
+        let mut tracker = one_side_tracker();
+        let (reborn, greed) = (Some(MONSTER_REBORN), Some(POT_OF_GREED));
+
+        let events = observe_sequence(
+            &mut tracker,
+            card_at(200.0, 300.0),
+            0.0,
+            &[
+                reborn, reborn, reborn, reborn, reborn, greed, greed, greed, greed,
+            ],
+        );
+
+        // At 700 ms the window holds 2 × Monster Reborn and 3 × Pot of Greed, all scored
+        // 0.9: 3 votes and exactly 1.5 times the runner-up's summed score.
+        assert_eq!(
+            events,
+            [
+                confirmed_monster_reborn(200.0),
+                TrackEvent::Changed {
+                    track: TrackId(1),
+                    player: Player::A,
+                    from: MONSTER_REBORN,
+                    to: POT_OF_GREED,
+                    time_ms: 700.0,
+                },
+            ]
         );
     }
 }
