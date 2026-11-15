@@ -249,10 +249,18 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - SQLite schema and passcode normalization.
 - **Decided**:
   - Languages: always sync **English**. Sync the selected card language on demand
-    (fr/de/it/pt) when it is chosen.
+    (fr/de/it/pt) when it is chosen (`CardDb::request_language`). If the
+    `database_version` is unchanged, the next sync downloads only the newly requested
+    language; a new `database_version` re-downloads English and every requested
+    language. Lookups fall back to English.
+  - Rate limit: 10 requests/s with no burst (requests at least 100 ms apart), shared with
+    the image cache.
+  - Alternate artworks are not cards: their image IDs are stored as aliases, and a
+    lookup by one returns the card it belongs to.
   - When: on startup, check `checkDBVer.php` **at most once every 24 h**, plus a manual
     "Sync now" (`sync_card_db`). Offline, the app still works, and unknown cards show
-    without details.
+    without details. `CardDb::needs_check(now)` tells startup whether a check is due;
+    only a sync that finishes counts as a check.
   - Dependencies: `rusqlite` (`bundled`), `reqwest` (`rustls`, no OpenSSL), `tokio`,
     `governor`, `serde_json`, and a fixture HTTP mock (e.g. `wiremock`) for tests.
   - Storage: the fields `Card` needs as columns, plus each card's raw JSON for future

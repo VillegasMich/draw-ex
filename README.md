@@ -204,16 +204,17 @@ Its rules shape the design:
 
 Design:
 
-- **Card database**: one bulk download of `cardinfo.php` into a local SQLite file,
-  including the localized names and text (`language=fr|de|it|pt`). On startup (at most
-  once a day) the app calls `checkDBVer.php` and re-syncs only when `database_version`
-  has changed.
+- **Card database**: one bulk download of `cardinfo.php` into a local SQLite file, in
+  English always and in a localized language (`language=fr|de|it|pt`) once the operator
+  picks it. On startup (at most once a day) the app calls `checkDBVer.php` and re-syncs
+  only when `database_version` has changed; a newly picked language is downloaded on its
+  own. Lookups fall back to English for an untranslated card.
 - **Images**: fetched on demand the first time a card is shown, then served from disk
   forever. Three sizes are available: `cards/`, `cards_small/` and `cards_cropped/` (the
   cropped artwork is missing for some cards). When a deck list is loaded, its card images
   are prefetched.
-- **One global rate limiter** guards every request to YGOPRODeck, with headroom below
-  the 20/s limit. The frontend never loads YGOPRODeck URLs directly: images reach the
+- **One global rate limiter** guards every request to YGOPRODeck: 10 requests/s with
+  no burst, half the 20/s limit. The frontend never loads YGOPRODeck URLs directly: images reach the
   webview from the local cache.
 - **Cache management**: a settings screen shows the cache size, with buttons to clear
   images, re-sync data, or delete models. The image cache has a size cap with LRU
@@ -221,6 +222,8 @@ Design:
 - **Card identity**: everything is keyed by **passcode** (the 8-digit number on the card,
   which is YGOPRODeck's `id` and the suffix of the ViT label `Card-Name-<passcode>`).
   Passcodes are normalized as integers, because some sources pad them with leading zeros.
+  An alternate artwork's image ID is not a separate card: it looks up the card it
+  belongs to.
 
 ### Data on disk
 
