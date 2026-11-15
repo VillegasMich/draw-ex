@@ -193,9 +193,20 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
 
 #### A1: Detection
 - **Branch**: `feat/draw-core-detect`. **Owns**: `crates/draw-core/src/detect/`, its
-  tests and fixtures.
+  tests and fixtures, `crates/draw-core/Cargo.toml`, `.github/workflows/rust.yml`, and
+  the porting notes in draw2's `CLAUDE.md`.
 - **Scope**: 640 letterbox preprocessing, YOLO-OBB session, output parsing (both
   layouts), portrait normalization, OBB NMS.
+- **Decided**:
+  - Dependencies: `ort` (ONNX Runtime 2.x, prebuilt binaries, CPU only; A3 adds the
+    GPU providers), `ndarray`, `image`.
+  - Reference boxes come from **the same ONNX model** run through ultralytics in
+    draw2's Python environment, saved as fixtures. A detection matches when IoU ≥ 0.9.
+  - The golden test runs when `DRAW_CORE_MODELS_DIR` is set and is skipped otherwise.
+    `rust.yml` downloads `ygo_yolo.onnx` from the manifest URL, verifies its sha256 and
+    caches it, so CI always runs the test.
+  - Moves the porting notes from draw-ex's `CLAUDE.md` into draw2's. The coordinator
+    replaces them with a pointer in draw-ex.
 - **Done when**:
   - [ ] On the draw2 sample images, the boxes match the Python pipeline's boxes within a
     set IoU tolerance, in a golden test.
@@ -230,12 +241,22 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
 ### Stream B: card-db (draw-ex)
 
 #### B1: API client and card database
-- **Branch**: `feat/card-db-sync`. **Owns**: `crates/card-db/src/{client,limiter,db,sync}/`,
-  `crates/card-db/tests/fixtures/`.
+- **Branch**: `feat/card-db-sync`. **Owns**: `crates/card-db/src/{client,limiter,db,sync}.rs`,
+  `crates/card-db/tests/`, `crates/card-db/Cargo.toml`.
 - **Scope**:
   - A `governor` rate limiter shared by every request, with headroom below 20 req/s.
   - `checkDBVer.php`; bulk `cardinfo.php` for EN + fr/de/it/pt.
   - SQLite schema and passcode normalization.
+- **Decided**:
+  - Languages: always sync **English**. Sync the selected card language on demand
+    (fr/de/it/pt) when it is chosen.
+  - When: on startup, check `checkDBVer.php` **at most once every 24 h**, plus a manual
+    "Sync now" (`sync_card_db`). Offline, the app still works, and unknown cards show
+    without details.
+  - Dependencies: `rusqlite` (`bundled`), `reqwest` (`rustls`, no OpenSSL), `tokio`,
+    `governor`, `serde_json`, and a fixture HTTP mock (e.g. `wiremock`) for tests.
+  - Storage: the fields `Card` needs as columns, plus each card's raw JSON for future
+    use.
 - **Done when**:
   - [ ] Sync runs against recorded fixtures (tests never hit the live API).
   - [ ] A second sync with an unchanged `database_version` makes exactly one request.
@@ -264,13 +285,26 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
 ### Stream C: tracker (draw-ex)
 
 #### C1: Tracks, voting, confirmation
-- **Branch**: `feat/tracker-core`. **Owns**: `crates/tracker/src/{track,vote}/`.
+- **Branch**: `feat/tracker-core`. **Owns**: `crates/tracker/src/{track,vote}.rs`.
+  `players.rs` (`CameraSetup`, `SplitLine::player_at`) is used read-only.
 - **Scope**:
   - Per-camera association of observations to tracks, by quad overlap and center distance.
   - A weighted vote over candidates.
   - A confirmation rule (minimum votes + margin) and a grace period before closing a
     track.
   - `TrackEvent::{Confirmed, Changed, Lost}`.
+- **Decided** (defaults live in `TrackerConfig`, so I2 can tune them):
+  - **Confirmed**: one passcode is recognized in **≥ 3 of the track's last 5
+    observations**, with a summed score **≥ 1.5×** the runner-up's.
+  - **Sticky identity**: a confirmed track keeps its passcode through unreadable or
+    low-confidence observations (face-down, a hand over it, glare).
+  - **Changed** fires only when a different passcode meets the confirmation rule on the
+    same track (a card swapped in place).
+  - **Lost** fires after **2 s** with no observation of the track.
+  - A card face-down from the start is never confirmed. That is correct: it is hidden
+    information.
+  - Duplicate copies on the table are separate tracks, kept apart by position, and both
+    are reported.
 - **Done when**:
   - [ ] Synthetic sequences show: flicker does not create duplicate tracks; one misread
     frame does not change a confirmed card; a removed card emits `Lost`.
@@ -288,13 +322,23 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
 ### Stream D: app and frontend (draw-ex)
 
 #### D1: Cameras and layout
-- **Branch**: `feat/cameras`. **Owns**: `src/camera/`, `src/layout/`,
-  `src-tauri/Info.plist`, entitlements.
+- **Branch**: `feat/cameras`. **Owns**: `src/camera/`, `src/layout/`, `src/App.svelte`
+  and its test, `src-tauri/Info.plist`, entitlements.
 - **Scope**:
   - Camera enumeration and setup picker (one side / both sides / two cameras).
   - `<video>` preview in the center column.
   - Permission-denied and camera-in-use errors.
   - macOS `NSCameraUsageDescription` + camera entitlement.
+- **Decided**:
+  - A slim toolbar above the camera has a **Setup** button that opens a modal. In it the
+    operator picks the camera setup, the camera(s), and the player for each camera, then
+    calls `setCameraSetup`.
+  - The chosen camera device IDs are remembered in `localStorage`, which is a webview
+    concern, so there is no contract change.
+  - Two cameras are shown **stacked**: Player B's camera on top, Player A's below, like
+    looking across the table.
+  - Each camera is requested at **1920×1080 ideal**, falling back to what the camera
+    supports.
 - **Done when**:
   - [ ] Each setup shows live preview on macOS and Windows.
   - [ ] Unplugging a camera shows an error instead of a frozen frame.
@@ -313,7 +357,9 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
     queue up, and memory stays flat over 10 minutes.
 
 #### D3: Overlay and panels
-- **Branch**: `feat/overlay-panels`. **Owns**: `src/overlay/`, `src/panels/`.
+- **Branch**: `feat/overlay-panels`. **Owns**: `src/overlay/`, `src/panels/`. It may
+  touch `src/App.svelte` only to mount its components into the existing regions. D1
+  owns that file, so D3 rebases on D1 if D1 merges first.
 - **Scope**:
   - Canvas boxes mapped through the video's letterbox.
   - A draggable split line.
@@ -321,6 +367,19 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - A duel-log timeline.
 - **Approach**: everything runs on fake detections, track events and card data from the
   F2 bindings.
+- **Decided**:
+  - **Panel**: the player's most recently confirmed card is **featured large** at the
+    top (image, name, type, ATK/DEF or level/link rating, effect text). Below it is a
+    **compact list** of that player's other cards on the table, newest first, as
+    thumbnail + name. Clicking a list item features it.
+  - **Lost cards** move to a dimmed **"Left the table"** section, showing the last 5.
+    The app does not claim where a card went (Graveyard, hand, banished).
+  - **Overlay**: every detection's quad is outlined in its player's color and labelled
+    with the card name once recognized. Unrecognized detections get a thin neutral
+    outline. A toggle hides the overlay.
+  - **Duel log**: a collapsible strip below the camera lists confirmed, changed and lost
+    events with time and player.
+  - Interface text is English. Card names follow the language setting.
 - **Done when**:
   - [ ] Boxes line up with the cards at any window size.
   - [ ] Panels update on fake `Confirmed` and `Lost` events.
