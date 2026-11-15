@@ -1,19 +1,29 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { CameraOverlay } from './overlay';
+  import { DuelLog, PlayerPanel, connectPanels, panels } from './panels';
+
+  onMount(connectPanels);
+</script>
+
 <div class="layout">
   <aside class="panel" aria-labelledby="player-a-title">
     <h2 id="player-a-title" class="title">Player A</h2>
-    <p class="empty">No cards yet</p>
+    <PlayerPanel panel={panels.state.a} onfeature={(track) => panels.feature('a', track)} />
   </aside>
 
   <main class="camera" aria-labelledby="camera-title">
     <h2 id="camera-title" class="title">Camera</h2>
     <div class="placeholder">
       <p class="empty">No camera connected</p>
+      <CameraOverlay />
     </div>
+    <DuelLog entries={panels.log} originMs={panels.originMs} />
   </main>
 
   <aside class="panel" aria-labelledby="player-b-title">
     <h2 id="player-b-title" class="title">Player B</h2>
-    <p class="empty">No cards yet</p>
+    <PlayerPanel panel={panels.state.b} onfeature={(track) => panels.feature('b', track)} />
   </aside>
 </div>
 
@@ -48,6 +58,7 @@
   }
 
   .placeholder {
+    position: relative;
     display: grid;
     flex: 1;
     place-items: center;
