@@ -1,0 +1,148 @@
+{
+  "data": [
+    {
+      "id": 14558127,
+      "name": "Ash Blossom & Joyous Spring",
+      "typeline": [
+        "Zombie",
+        "Tuner",
+        "Effect"
+      ],
+      "type": "Tuner Monster",
+      "humanReadableCardType": "Tuner Effect Monster",
+      "frameType": "effect",
+      "desc": "When a card or effect is activated that includes any of these effects (Quick Effect): You can discard this card; negate that effect.\r\n● Add a card from the Deck to the hand.\r\n● Special Summon from the Deck.\r\n● Send a card from the Deck to the GY.\r\nYou can only use this effect of \"Ash Blossom & Joyous Spring\" once per turn.",
+      "race": "Zombie",
+      "atk": 0,
+      "def": 1800,
+      "level": 3,
+      "attribute": "FIRE",
+      "ygoprodeck_url": "https://ygoprodeck.com/card/ash-blossom-joyous-spring-8554",
+      "banlist_info": {
+        "ban_ocg": "Semi-Limited"
+      },
+      "card_images": [
+        {
+          "id": 14558127,
+          "image_url": "https://images.ygoprodeck.com/images/cards/14558127.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/14558127.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/14558127.jpg"
+        }
+      ]
+    },
+    {
+      "id": 83764719,
+      "name": "Monster Reborn",
+      "type": "Spell Card",
+      "humanReadableCardType": "Normal Spell",
+      "frameType": "spell",
+      "desc": "Target 1 monster in either GY; Special Summon it.",
+      "race": "Normal",
+      "ygoprodeck_url": "https://ygoprodeck.com/card/monster-reborn-7027",
+      "banlist_info": {
+        "ban_tcg": "Limited",
+        "ban_ocg": "Limited",
+        "ban_goat": "Forbidden"
+      },
+      "card_images": [
+        {
+          "id": 83764719,
+          "image_url": "https://images.ygoprodeck.com/images/cards/83764719.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/83764719.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/83764719.jpg"
+        }
+      ]
+    },
+    {
+      "id": 55144522,
+      "name": "Pot of Greed",
+      "type": "Spell Card",
+      "humanReadableCardType": "Normal Spell",
+      "frameType": "spell",
+      "desc": "Draw 2 cards.",
+      "race": "Normal",
+      "archetype": "Greed",
+      "ygoprodeck_url": "https://ygoprodeck.com/card/pot-of-greed-4698",
+      "banlist_info": {
+        "ban_tcg": "Forbidden",
+        "ban_ocg": "Forbidden",
+        "ban_goat": "Limited"
+      },
+      "card_images": [
+        {
+          "id": 55144522,
+          "image_url": "https://images.ygoprodeck.com/images/cards/55144522.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/55144522.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/55144522.jpg"
+        }
+      ]
+    },
+    {
+      "id": 46986414,
+      "name": "Dark Magician",
+      "typeline": [
+        "Spellcaster",
+        "Normal"
+      ],
+      "type": "Normal Monster",
+      "humanReadableCardType": "Normal Monster",
+      "frameType": "normal",
+      "desc": "''The ultimate wizard in terms of attack and defense.''",
+      "race": "Spellcaster",
+      "atk": 2500,
+      "def": 2100,
+      "level": 7,
+      "attribute": "DARK",
+      "archetype": "Dark Magician",
+      "ygoprodeck_url": "https://ygoprodeck.com/card/dark-magician-4003",
+      "card_images": [
+        {
+          "id": 46986414,
+          "image_url": "https://images.ygoprodeck.com/images/cards/46986414.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/46986414.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/46986414.jpg"
+        },
+        {
+          "id": 36996508,
+          "image_url": "https://images.ygoprodeck.com/images/cards/36996508.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/36996508.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/36996508.jpg"
+        }
+      ]
+    },
+    {
+      "id": 1861629,
+      "name": "Decode Talker",
+      "typeline": [
+        "Cyberse",
+        "Link",
+        "Effect"
+      ],
+      "type": "Link Monster",
+      "humanReadableCardType": "Link Effect Monster",
+      "frameType": "link",
+      "desc": "2+ Effect Monsters\r\nGains 500 ATK for each monster it points to. When your opponent activates a card or effect that targets a card(s) you control (Quick Effect): You can Tribute 1 monster this card points to; negate the activation, and if you do, destroy that card.",
+      "race": "Cyberse",
+      "atk": 2300,
+      "def": null,
+      "level": 0,
+      "attribute": "DARK",
+      "archetype": "Code Talker",
+      "linkval": 3,
+      "linkmarkers": [
+        "Top",
+        "Bottom-Left",
+        "Bottom-Right"
+      ],
+      "ygoprodeck_url": "https://ygoprodeck.com/card/decode-talker-8433",
+      "card_images": [
+        {
+          "id": 1861629,
+          "image_url": "https://images.ygoprodeck.com/images/cards/1861629.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/1861629.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/1861629.jpg"
+        }
+      ]
+    }
+  ]
+}

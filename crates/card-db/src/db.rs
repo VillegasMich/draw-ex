@@ -1,10 +1,15 @@
 //! Owned by B1 (docs/ROADMAP.md): the SQLite card database and lookups by passcode.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use domain::Passcode;
+use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::client::{Client, DEFAULT_BASE_URL};
 
 /// A language the card data is available in. Card images exist only in English.
 ///
@@ -24,6 +29,19 @@ pub enum Language {
     It,
     /// Portuguese.
     Pt,
+}
+
+impl Language {
+    /// The YGOPRODeck language code, also stored in the database: `"en"`, `"fr"`, ...
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::En => "en",
+            Self::Fr => "fr",
+            Self::De => "de",
+            Self::It => "it",
+            Self::Pt => "pt",
+        }
+    }
 }
 
 /// The card data for one passcode in one language.
@@ -59,32 +77,155 @@ pub struct Card {
 }
 
 /// The local card database: card data for every passcode in every [`Language`].
+///
+/// English is always synced; other languages are synced once requested with
+/// [`CardDb::request_language`]. Lookups work offline, from whatever the last sync
+/// stored.
 #[derive(Debug)]
 pub struct CardDb {
-    // Replaced by the real connection in B1.
-    _placeholder: (),
+    path: PathBuf,
+    /// Serves lookups. A sync writes through its own connection, so with SQLite's WAL
+    /// journal a lookup never waits for a sync to finish storing.
+    conn: Mutex<Connection>,
+    pub(crate) client: Client,
+    /// Held for the whole of a sync, so two syncs never download the same data twice.
+    pub(crate) sync_lock: tokio::sync::Mutex<()>,
 }
 
 impl CardDb {
-    /// Opens the database file at `path`, creating it if it does not exist.
+    /// Opens the database file at `path`, creating it if it does not exist. Syncs talk to
+    /// YGOPRODeck at `https://db.ygoprodeck.com/api/v7/`.
     ///
     /// # Errors
     ///
     /// [`CardDbError`] if the file cannot be opened or its schema created.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, CardDbError> {
-        let _ = path.as_ref();
-        todo!("B1")
+        Self::open_with_base_url(path, DEFAULT_BASE_URL)
+    }
+
+    /// Like [`CardDb::open`], but syncs talk to the YGOPRODeck API at `base_url` instead,
+    /// e.g. a local mock server in tests.
+    ///
+    /// # Errors
+    ///
+    /// - [`CardDbError::InvalidBaseUrl`] if `base_url` is not an absolute URL.
+    /// - [`CardDbError`] if the file cannot be opened or its schema created.
+    pub fn open_with_base_url(path: impl AsRef<Path>, base_url: &str) -> Result<Self, CardDbError> {
+        let path = path.as_ref().to_owned();
+        let client = Client::new(base_url)?;
+        let conn = connect(&path)?;
+        Ok(Self {
+            path,
+            conn: Mutex::new(conn),
+            client,
+            sync_lock: tokio::sync::Mutex::new(()),
+        })
     }
 
     /// Looks up a card's data in `language`. Returns `None` if the passcode is unknown.
+    ///
+    /// Falls back to English when `language` has not been synced or the card has no
+    /// translation.
     ///
     /// # Errors
     ///
     /// [`CardDbError`] if the database cannot be read.
     pub fn get(&self, passcode: Passcode, language: Language) -> Result<Option<Card>, CardDbError> {
-        let _ = (passcode, language);
-        todo!("B1")
+        let conn = self.lock();
+        let mut lookup = conn.prepare_cached(
+            "SELECT passcode, name, kind, description, attribute, race, level, link_rating,
+                    atk, def
+             FROM cards
+             WHERE passcode = ?1 AND language IN (?2, 'en')
+             ORDER BY language = 'en'
+             LIMIT 1",
+        )?;
+        let card = lookup
+            .query_row(params![passcode.0, language.code()], card_from_row)
+            .optional()?;
+        Ok(card)
     }
+
+    /// The database file, for a sync to open its own connection to.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Connection> {
+        // A panic while holding the lock cannot leave the connection half-changed:
+        // SQLite rolls back an unfinished transaction.
+        self.conn.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+fn card_from_row(row: &Row<'_>) -> rusqlite::Result<Card> {
+    Ok(Card {
+        passcode: Passcode(row.get(0)?),
+        name: row.get(1)?,
+        kind: row.get(2)?,
+        description: row.get(3)?,
+        attribute: row.get(4)?,
+        race: row.get(5)?,
+        level: row.get(6)?,
+        link_rating: row.get(7)?,
+        atk: row.get(8)?,
+        def: row.get(9)?,
+    })
+}
+
+/// The schema version this code reads and writes, kept in `PRAGMA user_version`.
+const SCHEMA_VERSION: i32 = 1;
+
+/// One row per card per language. Alternate artworks are not cards: `card_aliases` maps
+/// their image IDs to the card's passcode. `metadata` holds the sync state as key/value
+/// text.
+const SCHEMA: &str = "
+CREATE TABLE cards (
+    passcode    INTEGER NOT NULL,
+    language    TEXT    NOT NULL,
+    name        TEXT    NOT NULL,
+    kind        TEXT    NOT NULL,
+    description TEXT    NOT NULL,
+    attribute   TEXT,
+    race        TEXT,
+    level       INTEGER,
+    link_rating INTEGER,
+    atk         INTEGER,
+    def         INTEGER,
+    raw_json    TEXT    NOT NULL,
+    PRIMARY KEY (passcode, language)
+) WITHOUT ROWID;
+
+CREATE TABLE card_aliases (
+    image_id INTEGER PRIMARY KEY,
+    passcode INTEGER NOT NULL
+);
+
+CREATE TABLE metadata (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+) WITHOUT ROWID;
+";
+
+/// Opens a connection to the database at `path`, creating the schema if the file is new.
+pub(crate) fn connect(path: &Path) -> Result<Connection, CardDbError> {
+    let mut conn = Connection::open(path)?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
+
+    // IMMEDIATE, so two connections opening a new file do not both create the schema.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: i32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    match version {
+        0 => {
+            tx.execute_batch(SCHEMA)?;
+            tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        }
+        SCHEMA_VERSION => {}
+        other => return Err(CardDbError::UnsupportedSchema { version: other }),
+    }
+    tx.commit()?;
+    Ok(conn)
 }
 
 /// Why the card database could not be opened, read or synced.
@@ -94,6 +235,30 @@ pub enum CardDbError {
     /// Reading or writing the database file failed.
     #[error("card database I/O failed")]
     Io(#[from] std::io::Error),
+    /// A database query failed.
+    #[error("card database query failed")]
+    Database(#[from] rusqlite::Error),
+    /// The database file was written by a newer version of draw-ex.
+    #[error("card database schema version {version} is newer than this app supports")]
+    UnsupportedSchema {
+        /// The file's `PRAGMA user_version`.
+        version: i32,
+    },
+    /// The YGOPRODeck base URL is not an absolute URL.
+    #[error("invalid YGOPRODeck base URL {url:?}")]
+    InvalidBaseUrl {
+        /// The rejected URL.
+        url: String,
+    },
+    /// A YGOPRODeck request failed: no connection, a timeout or an error status.
+    #[error("YGOPRODeck request failed")]
+    Request(#[source] reqwest::Error),
+    /// YGOPRODeck answered with JSON this client does not understand.
+    #[error("YGOPRODeck sent an unexpected response")]
+    InvalidResponse(#[source] serde_json::Error),
+    /// The background task storing a sync was cancelled before it finished.
+    #[error("card database task was cancelled")]
+    Cancelled(#[source] tokio::task::JoinError),
 }
 
 #[cfg(test)]

@@ -1,0 +1,59 @@
+{
+  "data": [
+    {
+      "id": 14558127,
+      "name": "Floraison de Cendres et Joyeux Printemps",
+      "typeline": [
+        "Zombie",
+        "Tuner",
+        "Effect"
+      ],
+      "type": "Tuner Monster",
+      "humanReadableCardType": "Tuner Effect Monster",
+      "frameType": "effect",
+      "desc": "Lorsqu'une carte ou un effet qui inclut n'importe lequel de ces effets est activé (Effet Rapide) : vous pouvez défausser cette carte ; annulez l'effet.\n●Ajouter une carte depuis le Deck à la main.\n●Invoquer Spécialement depuis le Deck.\n●Envoyer une carte depuis le Deck au Cimetière.\nVous ne pouvez utiliser cet effet de \"Floraison de Cendres et Joyeux Printemps\" qu'une fois par tour.",
+      "race": "Zombie",
+      "atk": 0,
+      "def": 1800,
+      "level": 3,
+      "attribute": "FIRE",
+      "name_en": "Ash Blossom & Joyous Spring",
+      "ygoprodeck_url": "https://ygoprodeck.com/card/ash-blossom-joyous-spring-8554",
+      "banlist_info": {
+        "ban_ocg": "Semi-Limited"
+      },
+      "card_images": [
+        {
+          "id": 14558127,
+          "image_url": "https://images.ygoprodeck.com/images/cards/14558127.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/14558127.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/14558127.jpg"
+        }
+      ]
+    },
+    {
+      "id": 83764719,
+      "name": "Monster Reborn",
+      "type": "Spell Card",
+      "humanReadableCardType": "Normal Spell",
+      "frameType": "spell",
+      "desc": "Ciblez 1 monstre dans l'un des Cimetières ; Invoquez-le Spécialement.",
+      "race": "Normal",
+      "name_en": "Monster Reborn",
+      "ygoprodeck_url": "https://ygoprodeck.com/card/monster-reborn-7027",
+      "banlist_info": {
+        "ban_tcg": "Limited",
+        "ban_ocg": "Limited",
+        "ban_goat": "Forbidden"
+      },
+      "card_images": [
+        {
+          "id": 83764719,
+          "image_url": "https://images.ygoprodeck.com/images/cards/83764719.jpg",
+          "image_url_small": "https://images.ygoprodeck.com/images/cards_small/83764719.jpg",
+          "image_url_cropped": "https://images.ygoprodeck.com/images/cards_cropped/83764719.jpg"
+        }
+      ]
+    }
+  ]
+}
