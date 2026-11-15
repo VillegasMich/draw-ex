@@ -1,7 +1,7 @@
 //! Owned by C1 (docs/ROADMAP.md): associating observations into tracks, confirmation,
 //! and the events the tracker emits.
 
-use domain::{CameraId, Passcode, Player, Quad};
+use domain::{CameraId, Passcode, Player, Point, Quad};
 use serde::{Deserialize, Serialize};
 
 use crate::CameraSetup;
@@ -120,6 +120,15 @@ pub struct TrackerConfig {
     /// Default 2000.
     #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
     pub grace_ms: f64,
+    /// Minimum overlap, as intersection over union of the axis-aligned bounds of the two
+    /// quads (0 to 1), for an observation to continue a track. Default 0.3.
+    #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
+    pub min_iou: f32,
+    /// Maximum distance between the centers of an observation and a track for the
+    /// observation to continue it, as a fraction of the card's size: the shorter side
+    /// of the axis-aligned bounds of the track's latest quad. Default 0.5.
+    #[cfg_attr(feature = "specta", specta(type = domain::FiniteNumber))]
+    pub max_center_distance: f32,
 }
 
 impl Default for TrackerConfig {
@@ -129,6 +138,8 @@ impl Default for TrackerConfig {
             min_votes: 3,
             min_margin: 1.5,
             grace_ms: 2000.0,
+            min_iou: 0.3,
+            max_center_distance: 0.5,
         }
     }
 }
@@ -179,11 +190,7 @@ impl Tracker {
 
     /// Adds one observation and returns the events it caused, in order.
     pub fn observe(&mut self, observation: Observation) -> Vec<TrackEvent> {
-        let index = match self
-            .tracks
-            .iter()
-            .position(|track| track.camera == observation.camera)
-        {
+        let index = match self.matching_track(&observation) {
             Some(index) => index,
             None => self.start_track(&observation),
         };
@@ -220,6 +227,33 @@ impl Tracker {
         Vec::new()
     }
 
+    /// The index of the open track `observation` continues, if any.
+    ///
+    /// A candidate track is of the same camera, was seen within the grace period, has
+    /// not taken an observation of this frame yet, and overlaps the observation or has a
+    /// nearby center (see [`TrackerConfig`]). Of those, the one with the nearest center
+    /// wins.
+    fn matching_track(&self, observation: &Observation) -> Option<usize> {
+        let bounds = Bounds::of(&observation.quad);
+        self.tracks
+            .iter()
+            .enumerate()
+            .filter(|(_, track)| {
+                track.camera == observation.camera
+                    && track.last_seen_ms != observation.time_ms
+                    && observation.time_ms - track.last_seen_ms <= self.config.grace_ms
+            })
+            .filter_map(|(index, track)| {
+                let track_bounds = Bounds::of(&track.quad);
+                let distance = track_bounds.center_distance(&bounds) / track_bounds.short_side();
+                let near = distance <= self.config.max_center_distance
+                    || track_bounds.iou(&bounds) >= self.config.min_iou;
+                near.then_some((index, distance))
+            })
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(index, _)| index)
+    }
+
     /// Opens a new, unconfirmed track for `observation` and returns its index.
     fn start_track(&mut self, observation: &Observation) -> usize {
         let id = TrackId(self.next_id);
@@ -233,6 +267,72 @@ impl Tracker {
             confirmed: None,
         });
         self.tracks.len() - 1
+    }
+}
+
+/// The axis-aligned bounds of a quad, in source-frame pixels.
+#[derive(Debug, Clone, Copy)]
+struct Bounds {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+impl Bounds {
+    fn of(quad: &Quad) -> Self {
+        let [first, rest @ ..] = quad.0;
+        rest.iter().fold(
+            Self {
+                left: first.x,
+                top: first.y,
+                right: first.x,
+                bottom: first.y,
+            },
+            |bounds, point| Self {
+                left: bounds.left.min(point.x),
+                top: bounds.top.min(point.y),
+                right: bounds.right.max(point.x),
+                bottom: bounds.bottom.max(point.y),
+            },
+        )
+    }
+
+    fn width(&self) -> f32 {
+        self.right - self.left
+    }
+
+    fn height(&self) -> f32 {
+        self.bottom - self.top
+    }
+
+    fn center(&self) -> Point {
+        Point {
+            x: (self.left + self.right) / 2.0,
+            y: (self.top + self.bottom) / 2.0,
+        }
+    }
+
+    fn short_side(&self) -> f32 {
+        self.width().min(self.height())
+    }
+
+    fn center_distance(&self, other: &Self) -> f32 {
+        let (a, b) = (self.center(), other.center());
+        (a.x - b.x).hypot(a.y - b.y)
+    }
+
+    /// Intersection over union, from 0 to 1 (0 when both are empty).
+    fn iou(&self, other: &Self) -> f32 {
+        let overlap_width = (self.right.min(other.right) - self.left.max(other.left)).max(0.0);
+        let overlap_height = (self.bottom.min(other.bottom) - self.top.max(other.top)).max(0.0);
+        let intersection = overlap_width * overlap_height;
+        let union = self.width() * self.height() + other.width() * other.height() - intersection;
+        if union > 0.0 {
+            intersection / union
+        } else {
+            0.0
+        }
     }
 }
 
@@ -395,6 +495,37 @@ mod tests {
             tracker.observe(seen(quad, Some(MONSTER_REBORN), 300.0)),
             [],
             "a track is confirmed once"
+        );
+    }
+
+    #[test]
+    fn duplicate_copies_at_different_positions_are_two_confirmed_tracks() {
+        let mut tracker = one_side_tracker();
+        let (left, right) = (card_at(100.0, 300.0), card_at(260.0, 300.0));
+
+        let mut events = Vec::new();
+        for frame in 0..3 {
+            let time_ms = f64::from(frame) * 100.0;
+            events.extend(tracker.observe(seen(left, Some(MONSTER_REBORN), time_ms)));
+            events.extend(tracker.observe(seen(right, Some(MONSTER_REBORN), time_ms)));
+        }
+
+        assert_eq!(
+            events,
+            [
+                TrackEvent::Confirmed {
+                    track: TrackId(1),
+                    player: Player::A,
+                    passcode: MONSTER_REBORN,
+                    time_ms: 200.0,
+                },
+                TrackEvent::Confirmed {
+                    track: TrackId(2),
+                    player: Player::A,
+                    passcode: MONSTER_REBORN,
+                    time_ms: 200.0,
+                },
+            ]
         );
     }
 }
