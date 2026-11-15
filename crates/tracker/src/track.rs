@@ -148,6 +148,35 @@ impl Default for TrackerConfig {
 ///
 /// Feed it every [`Observation`] with [`Tracker::observe`], and call [`Tracker::tick`]
 /// regularly so tracks that are no longer seen are closed.
+///
+/// The thresholds below are [`TrackerConfig`] fields, with their defaults in parentheses.
+///
+/// - **Association**: an observation continues an open track of the same camera when
+///   their quads overlap (`min_iou` (0.3)) or their centers are close
+///   (`max_center_distance` (0.5 of the card's shorter side)); the nearest such track
+///   wins. A track takes at most one observation per frame (same `time_ms`), and a
+///   track unseen for longer than `grace_ms` (2000) is never continued. Otherwise the
+///   observation starts a new track, so duplicate copies at different positions are
+///   separate tracks.
+/// - **Vote**: each track keeps its last `window_size` (5) observations. Each one votes
+///   for its `recognized` passcode, if any, weighted by that passcode's candidate score
+///   (0 if it is not among the candidates).
+/// - **Confirmation**: a passcode wins the vote with at least `min_votes` (3) votes and a
+///   summed score at least `min_margin` (1.5) times the runner-up's (an absent runner-up
+///   counts as 0). The first win emits [`TrackEvent::Confirmed`]; a card face-down from
+///   the start never wins.
+/// - **Sticky identity**: a confirmed track keeps its passcode through unreadable or
+///   low-confidence observations. Only a *different* passcode winning the vote emits
+///   [`TrackEvent::Changed`].
+/// - **Player**: decided once, at confirmation, from the [`CameraSetup`]: the configured
+///   player for `OneSide`, [`SplitLine::player_at`](crate::SplitLine::player_at) of the
+///   center of the latest quad's axis-aligned bounds for `SplitLine`, and the
+///   observation's camera's player for `TwoCameras`.
+/// - **Closing**: [`Tracker::tick`] closes tracks unseen for longer than `grace_ms`,
+///   emitting [`TrackEvent::Lost`] for confirmed ones.
+///
+/// Observations from a camera that is not part of the setup are ignored. The logic is
+/// pure: time only advances through `time_ms` and `now_ms`.
 #[derive(Debug)]
 pub struct Tracker {
     config: TrackerConfig,
@@ -193,8 +222,8 @@ impl Tracker {
     /// An observation from a camera that is not part of the current [`CameraSetup`] is
     /// ignored: it neither starts nor continues a track, and returns no events.
     pub fn observe(&mut self, observation: Observation) -> Vec<TrackEvent> {
-        // Computed for every observation, but only used if this one confirms the track:
-        // the player is decided at confirmation, from the latest position.
+        // Also rejects unknown cameras. The player is only used if this observation
+        // confirms its track.
         let Some(player) = player_for(&self.setup, &observation) else {
             return Vec::new();
         };
