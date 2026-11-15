@@ -306,7 +306,7 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - Duplicate copies on the table are separate tracks, kept apart by position, and both
     are reported.
 - **Done when**:
-  - [ ] Synthetic sequences show: flicker does not create duplicate tracks; one misread
+  - [x] Synthetic sequences show: flicker does not create duplicate tracks; one misread
     frame does not change a confirmed card; a removed card emits `Lost`.
 
 #### C2: Player assignment and duel log
