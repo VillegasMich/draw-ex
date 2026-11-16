@@ -303,9 +303,9 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
     never re-requested.
   - Prefetch takes a passcode list (deck lists, I1).
 - **Done when**:
-  - [ ] A test proves a second request for the same image makes no network call.
-  - [ ] A missing cropped image is handled.
-  - [ ] The cap evicts the oldest files first.
+  - [x] A test proves a second request for the same image makes no network call.
+  - [x] A missing cropped image is handled.
+  - [x] The cap evicts the oldest files first.
 
 #### B3: Deck lists
 - **Branch**: `feat/decks`. **Owns**: `crates/card-db/src/deck.rs` and its tests.
