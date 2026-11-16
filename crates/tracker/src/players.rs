@@ -38,6 +38,38 @@ pub enum CameraSetup {
     },
 }
 
+impl CameraSetup {
+    /// The player a card seen by `camera` at `point` (in that camera's source-frame
+    /// pixels) belongs to, or `None` when `camera` is not part of this setup.
+    ///
+    /// - `OneSide`: the configured player, wherever the point is.
+    /// - `SplitLine`: [`SplitLine::player_at`] of the point.
+    /// - `TwoCameras`: the player whose camera it is, wherever the point is. If `a` and
+    ///   `b` are the same camera, Player A wins.
+    #[must_use]
+    pub fn player_for(&self, camera: &CameraId, point: Point) -> Option<Player> {
+        match self {
+            Self::OneSide {
+                camera: setup_camera,
+                player,
+            } => (camera == setup_camera).then_some(*player),
+            Self::SplitLine {
+                camera: setup_camera,
+                line,
+            } => (camera == setup_camera).then(|| line.player_at(point)),
+            Self::TwoCameras { a, b } => {
+                if camera == a {
+                    Some(Player::A)
+                } else if camera == b {
+                    Some(Player::B)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 /// A line across one camera's view that separates Player A's half of the table from
 /// Player B's, in that camera's source-frame pixels.
 ///
@@ -50,8 +82,9 @@ pub enum CameraSetup {
 pub struct SplitLine {
     /// Where the line starts, in source-frame pixels.
     pub from: Point,
-    /// A second point the line passes through, in source-frame pixels. Must differ from
-    /// `from`.
+    /// A second point the line passes through, in source-frame pixels. It should differ
+    /// from `from`; if it does not, the line is degenerate and every point belongs to
+    /// Player A (see [`SplitLine::player_at`]).
     pub to: Point,
 }
 
@@ -74,8 +107,15 @@ impl SplitLine {
     /// Which player's half of the table `point` (in source-frame pixels) is on.
     ///
     /// Points to the left of `from → to` as seen on screen belong to Player A, points to
-    /// the right to Player B. Points exactly on the line, and every point when `from`
-    /// equals `to`, belong to Player A.
+    /// the right to Player B, whatever the line's angle.
+    ///
+    /// The ambiguous cases resolve to Player A, so the result is always deterministic:
+    ///
+    /// - points exactly on the line (including past either end) belong to Player A, for
+    ///   both directions of the line;
+    /// - a degenerate line (`from` equals `to`) has no sides, so every point belongs to
+    ///   Player A. All of a camera's cards then land in one panel, which the operator
+    ///   sees and fixes by redrawing the line.
     #[must_use]
     pub fn player_at(&self, point: Point) -> Player {
         let (dx, dy) = (
@@ -161,6 +201,78 @@ mod tests {
         assert_eq!(line.player_at(point(300.0, 0.0)), Player::B);
     }
 
+    /// A line through (100, 100) heading at `degrees` on screen (0° points right, 90°
+    /// points down, as y points down), with two points on its left and right.
+    fn line_at(degrees: f32) -> (SplitLine, Point, Point) {
+        let from = point(100.0, 100.0);
+        let (dx, dy) = match degrees {
+            0.0 => (1.0, 0.0),
+            45.0 => (1.0, 1.0),
+            90.0 => (0.0, 1.0),
+            180.0 => (-1.0, 0.0),
+            _ => unreachable!("no fixture for {degrees}°"),
+        };
+        let to = point(from.x + 50.0 * dx, from.y + 50.0 * dy);
+        // Rotating the heading a quarter turn counter-clockwise on screen, (dy, -dx),
+        // points to the left of the direction of travel.
+        let left = point(from.x + 20.0 * dy, from.y - 20.0 * dx);
+        let right = point(from.x - 20.0 * dy, from.y + 20.0 * dx);
+        (SplitLine { from, to }, left, right)
+    }
+
+    #[test]
+    fn split_lines_at_any_angle_give_player_a_their_left_side() {
+        for degrees in [0.0, 45.0, 90.0, 180.0] {
+            let (line, left, right) = line_at(degrees);
+
+            assert_eq!(line.player_at(left), Player::A, "left of {degrees}°");
+            assert_eq!(line.player_at(right), Player::B, "right of {degrees}°");
+        }
+    }
+
+    #[test]
+    fn reversing_a_split_line_swaps_the_players() {
+        for degrees in [0.0, 45.0, 90.0, 180.0] {
+            let (line, left, right) = line_at(degrees);
+            let reversed = SplitLine {
+                from: line.to,
+                to: line.from,
+            };
+
+            assert_eq!(reversed.player_at(left), Player::B, "left of {degrees}°");
+            assert_eq!(reversed.player_at(right), Player::A, "right of {degrees}°");
+        }
+    }
+
+    #[test]
+    fn points_on_a_split_line_at_any_angle_give_player_a() {
+        for degrees in [0.0, 45.0, 90.0, 180.0] {
+            let (line, ..) = line_at(degrees);
+            let (dx, dy) = (line.to.x - line.from.x, line.to.y - line.from.y);
+            let on_line = [
+                line.from,
+                line.to,
+                point(line.from.x + 0.5 * dx, line.from.y + 0.5 * dy),
+                // Past both ends: the line is infinite.
+                point(line.from.x - 3.0 * dx, line.from.y - 3.0 * dy),
+                point(line.from.x + 7.0 * dx, line.from.y + 7.0 * dy),
+            ];
+
+            for on in on_line {
+                assert_eq!(line.player_at(on), Player::A, "{on:?} on {degrees}°");
+                let reversed = SplitLine {
+                    from: line.to,
+                    to: line.from,
+                };
+                assert_eq!(
+                    reversed.player_at(on),
+                    Player::A,
+                    "{on:?} on reversed {degrees}°"
+                );
+            }
+        }
+    }
+
     #[test]
     fn points_on_the_line_and_degenerate_lines_give_player_a() {
         let line = SplitLine::default_for(100, 100);
@@ -171,6 +283,87 @@ mod tests {
             to: point(5.0, 5.0),
         };
         assert_eq!(degenerate.player_at(point(80.0, 1.0)), Player::A);
+    }
+
+    fn camera(id: &str) -> CameraId {
+        CameraId(id.into())
+    }
+
+    #[test]
+    fn one_side_setup_gives_every_point_of_its_camera_to_its_player() {
+        let setup = CameraSetup::OneSide {
+            camera: camera("cam-1"),
+            player: Player::B,
+        };
+
+        assert_eq!(
+            setup.player_for(&camera("cam-1"), point(10.0, 10.0)),
+            Some(Player::B)
+        );
+        assert_eq!(
+            setup.player_for(&camera("cam-1"), point(900.0, 700.0)),
+            Some(Player::B)
+        );
+    }
+
+    #[test]
+    fn split_line_setup_gives_each_half_of_its_camera_to_one_player() {
+        let setup = CameraSetup::SplitLine {
+            camera: camera("cam-1"),
+            line: SplitLine::default_for(1280, 720),
+        };
+
+        assert_eq!(
+            setup.player_for(&camera("cam-1"), point(640.0, 700.0)),
+            Some(Player::A)
+        );
+        assert_eq!(
+            setup.player_for(&camera("cam-1"), point(640.0, 20.0)),
+            Some(Player::B)
+        );
+    }
+
+    #[test]
+    fn two_cameras_setup_gives_each_camera_to_its_player() {
+        let setup = CameraSetup::TwoCameras {
+            a: camera("left"),
+            b: camera("right"),
+        };
+
+        assert_eq!(
+            setup.player_for(&camera("left"), point(5.0, 5.0)),
+            Some(Player::A)
+        );
+        assert_eq!(
+            setup.player_for(&camera("right"), point(5.0, 5.0)),
+            Some(Player::B)
+        );
+    }
+
+    #[test]
+    fn a_camera_not_in_the_setup_has_no_player() {
+        let setups = [
+            CameraSetup::OneSide {
+                camera: camera("cam-1"),
+                player: Player::A,
+            },
+            CameraSetup::SplitLine {
+                camera: camera("cam-1"),
+                line: SplitLine::default_for(1280, 720),
+            },
+            CameraSetup::TwoCameras {
+                a: camera("left"),
+                b: camera("right"),
+            },
+        ];
+
+        for setup in setups {
+            assert_eq!(
+                setup.player_for(&camera("other"), point(5.0, 5.0)),
+                None,
+                "{setup:?}"
+            );
+        }
     }
 
     #[test]
