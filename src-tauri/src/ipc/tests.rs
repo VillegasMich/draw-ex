@@ -392,6 +392,55 @@ fn submit_frame_returns_the_canned_detections_in_frame_pixels() {
 }
 
 #[test]
+fn submit_frame_scales_the_canned_detections_to_each_frame_size() {
+    let app = TestApp::new();
+
+    for (width, height, first_quad) in [
+        (
+            640,
+            480,
+            json!([
+                { "x": 64.0, "y": 264.0 },
+                { "x": 160.0, "y": 264.0 },
+                { "x": 160.0, "y": 408.0 },
+                { "x": 64.0, "y": 408.0 },
+            ]),
+        ),
+        (
+            1920,
+            1080,
+            json!([
+                { "x": 192.0, "y": 594.0 },
+                { "x": 480.0, "y": 594.0 },
+                { "x": 480.0, "y": 918.0 },
+                { "x": 192.0, "y": 918.0 },
+            ]),
+        ),
+    ] {
+        let detections = submit_frame(
+            &app,
+            vec![0; width * height * 4],
+            frame_headers(&width.to_string(), &height.to_string(), "0"),
+        )
+        .expect("a valid frame is accepted");
+
+        assert_eq!(detections[0]["quad"], first_quad, "{width}x{height}");
+    }
+}
+
+#[test]
+fn submit_frame_answers_frames_from_several_cameras_one_after_another() {
+    let app = TestApp::new();
+
+    for camera in ["cam-1", "cam-2", "cam-1"] {
+        let mut headers = frame_headers("2", "2", "0");
+        headers.insert(CAMERA_ID_HEADER, HeaderValue::from_static(camera));
+        let detections = submit_frame(&app, vec![0; 16], headers).expect("accepted");
+        assert_eq!(detections.as_array().map(Vec::len), Some(5), "{camera}");
+    }
+}
+
+#[test]
 fn submit_frame_rejects_each_missing_header() {
     let app = TestApp::new();
     for missing in [

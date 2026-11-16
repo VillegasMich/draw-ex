@@ -5,12 +5,13 @@
 //! hand-written wrapper in `src/lib/frames.ts`.
 
 use domain::CameraId;
-use draw_core::{FakeRecognizer, FrameRef, Recognize};
+use draw_core::FrameRef;
+use tauri::State;
 use tauri::http::HeaderMap;
 use tauri::ipc::{InvokeBody, Request};
 
-use super::canned;
 use super::types::{DetectionDto, IpcError, IpcErrorKind};
+use crate::pipeline::{Pipeline, PipelineError};
 
 /// The command name, as the frontend invokes it.
 pub const SUBMIT_FRAME: &str = "submit_frame";
@@ -89,14 +90,19 @@ impl FrameHeaders {
 
 /// Runs recognition on one frame and returns its detections, in that frame's pixels.
 ///
-/// The stub runs draw-core's `FakeRecognizer` with the canned detections.
+/// The frame is copied into a job for the [`Pipeline`]'s worker thread, and the
+/// response waits for that job without blocking the async runtime. The pipeline runs a
+/// stand-in recognizer with canned detections until real recognition lands (A3/I1).
 ///
 /// # Errors
 ///
 /// [`IpcErrorKind::InvalidArgument`] if a header is missing or malformed, the body is
 /// not raw bytes, or its length is not `width * height * 4`.
 #[tauri::command]
-pub fn submit_frame(request: Request<'_>) -> Result<Vec<DetectionDto>, IpcError> {
+pub async fn submit_frame(
+    request: Request<'_>,
+    pipeline: State<'_, Pipeline>,
+) -> Result<Vec<DetectionDto>, IpcError> {
     let headers = FrameHeaders::parse(request.headers())?;
     let InvokeBody::Raw(rgba) = request.body() else {
         return Err(invalid(
@@ -106,11 +112,13 @@ pub fn submit_frame(request: Request<'_>) -> Result<Vec<DetectionDto>, IpcError>
     let frame =
         FrameRef::new(headers.width, headers.height, rgba).map_err(|e| invalid(e.to_string()))?;
 
-    let mut recognizer =
-        FakeRecognizer::new(canned::detections(frame.width(), frame.height()), None);
     // Recognition errors can name model files, so their text stays on the Rust side.
-    let detections = recognizer
-        .recognize(frame)
-        .map_err(|_| IpcError::new(IpcErrorKind::Internal, "recognition failed on this frame"))?;
+    let detections = pipeline.recognize(frame).await.map_err(|error| {
+        let message = match error {
+            PipelineError::Stopped => "recognition has stopped",
+            PipelineError::Recognize(_) => "recognition failed on this frame",
+        };
+        IpcError::new(IpcErrorKind::Internal, message)
+    })?;
     Ok(detections.into_iter().map(DetectionDto::from).collect())
 }

@@ -23,6 +23,7 @@ use tauri::Runtime;
 use tauri::ipc::Invoke;
 use tauri_specta::{collect_commands, collect_events};
 
+use crate::pipeline;
 use events::{CardDbSyncProgress, ModelDownloadProgress, TrackEventPayload};
 use types::{DetectionDto, IpcError};
 
@@ -67,11 +68,18 @@ fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
         .disable_serde_phases()
 }
 
-/// Registers every IPC command on a Tauri app builder. Call [`mount_events`] on the
-/// built app before it emits any event.
+/// Registers every IPC command on a Tauri app builder, with the frame pipeline that
+/// `submit_frame` uses. Call [`mount_events`] on the built app before it emits any event.
 pub fn register_commands<R: Runtime>(app: tauri::Builder<R>) -> tauri::Builder<R> {
     let typed = specta_builder::<R>().invoke_handler();
     let raw = raw_handler::<R>();
+    let recognizer =
+        pipeline::CannedRecognizer::new(canned::detections, pipeline::fake_delay_from_env());
+    // Failing to start one thread at launch means the OS is out of resources; there is
+    // nothing useful the app could do without recognition.
+    let pipeline = pipeline::Pipeline::spawn(Box::new(recognizer))
+        .expect("the OS starts the recognition thread at launch");
+    let app = app.manage(pipeline);
     app.invoke_handler(move |invoke: Invoke<R>| {
         if invoke.message.command() == frames::SUBMIT_FRAME {
             raw(invoke)
