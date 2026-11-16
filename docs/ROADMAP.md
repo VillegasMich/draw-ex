@@ -208,12 +208,12 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - Moves the porting notes from draw-ex's `CLAUDE.md` into draw2's. The coordinator
     replaces them with a pointer in draw-ex.
 - **Done when**:
-  - [ ] On the draw2 sample images, the boxes match the Python pipeline's boxes within a
+  - [x] On the draw2 sample images, the boxes match the Python pipeline's boxes within a
     set IoU tolerance, in a golden test.
 
 #### A2: Crop and classify
 - **Branch**: `feat/draw-core-classify`. **Owns**: `crates/draw-core/src/{warp,classify}/`,
-  its tests and fixtures.
+  its tests and fixtures, `crates/draw-core/Cargo.toml`, `.github/workflows/rust.yml`.
 - **Scope**:
   - Homography warp to 224×224.
   - 0°/180° orientation with fallback.
@@ -221,6 +221,24 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - Deck-list filtering.
 - **Approach**: tests use fixture boxes saved from the Python pipeline, so this ticket
   does not wait on A1.
+- **Decided**:
+  - Port of `pipeline.js`:
+    - a **hand-written** homography warp to 224×224 (`solveHomography` /
+      `warpPerspective`, with no OpenCV);
+    - `correctRotation`: 0° or 180° from the brightness of the card's ends. If top-1
+      confidence is below 0.15, try the other rotation, and keep it only if it is
+      ≥ 1.25× better;
+    - ViT normalization with mean = std = 0.5, softmax only when the outputs are
+      logits, and top-k;
+    - both label formats;
+    - deck filtering, where `Some(empty set)` behaves like `None`.
+  - Uses the shared `runtime::environment()` from A1. It never calls `ort::init()`.
+  - Reference results: a Python script makes the crops with OpenCV and runs the **same
+    ONNX ViT** through onnxruntime. Rust must match top-1 exactly and the scores within
+    1e-3, and `sample_photo` must give Monster Reborn.
+  - CI downloads the **int8** ViT (98 MB) plus its labels from the manifest, verifies
+    them and caches them, like the detector.
+  - `serde` + `serde_json` are approved as normal dependencies, for the label files.
 - **Done when**:
   - [ ] `sample_photo.jpg` with its fixture box yields Monster Reborn `83764719` as top-1.
   - [ ] The deck filter picks the best in-deck candidate from a top-15.
@@ -272,20 +290,32 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
 
 #### B2: Image cache
 - **Branch**: `feat/card-db-images`. **Depends on**: B1 (limiter + client).
-- **Owns**: `crates/card-db/src/images/`.
+- **Owns**: `crates/card-db/src/images.rs`, its tests, and `crates/card-db/Cargo.toml`.
 - **Scope**:
   - On-demand fetch of the full, small and cropped images, each fetched once.
   - Disk layout `images/<size>/<passcode>.jpg`.
   - LRU size cap, prefetch for a passcode list, stats and clear.
+- **Decided**:
+  - Fetches go through B1's shared limiter (`Client::limiter()`).
+  - LRU by **file access time**: touch a file on read, evict the least recently used
+    first. The cap comes from the caller (settings `image_cache_mb`, default 1024).
+  - A missing image (e.g. no cropped art) is **remembered** with a marker, so it is
+    never re-requested.
+  - Prefetch takes a passcode list (deck lists, I1).
 - **Done when**:
   - [ ] A test proves a second request for the same image makes no network call.
   - [ ] A missing cropped image is handled.
   - [ ] The cap evicts the oldest files first.
 
 #### B3: Deck lists
-- **Branch**: `feat/decks`. **Owns**: `crates/card-db/src/deck/`.
+- **Branch**: `feat/decks`. **Owns**: `crates/card-db/src/deck.rs` and its tests.
 - **Scope**: `.ydk` parsing (`#main`, `#extra`, `!side`, comments, leading zeros), saving
   imported decks, listing passcodes.
+- **Decided**:
+  - The deck store lives in `card-db`. Imported `.ydk` files are copied into `decks/`,
+    and a deck's id is derived from its file name.
+  - It lists and loads `Deck`s. Additive public API (e.g. `DeckStore`) is fine.
+  - Wiring into the IPC deck commands is I1.
 - **Done when**:
   - [ ] Real `.ydk` exports from YGOPRODeck and EDOPro parse into the expected passcode
     sets.
@@ -318,11 +348,18 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
     frame does not change a confirmed card; a removed card emits `Lost`.
 
 #### C2: Player assignment and duel log
-- **Branch**: `feat/tracker-players`. **Owns**: `crates/tracker/src/{players,log}/`.
+- **Branch**: `feat/tracker-players`. **Owns**: `crates/tracker/src/{players,log}.rs`.
 - **Scope**:
   - The three setups (single side, split line, two cameras).
   - Split-line geometry: any angle, set in frame coordinates.
   - A JSONL duel-log writer (session header + one event per line).
+- **Decided**:
+  - The log lives at `duels/<session-start>.jsonl`.
+  - The first line is a header: session id, wall-clock start (`startedAtMs`, epoch
+    ms) and the camera setup.
+  - Then one line per `TrackEvent`, with both its `performance.now()` time and the
+    wall-clock time derived from the session's origin.
+  - Each line is **flushed** as it is written, so a crash loses nothing.
 - **Done when**:
   - [ ] Unit tests cover each setup.
   - [ ] The log round-trips through serde.
@@ -357,12 +394,21 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
 #### D2: Frame pipeline
 - **Branch**: `feat/frame-pipeline`. **Depends on**: D1 (a `<video src=sample.mp4>`
   source is enough to start).
-- **Owns**: `src/frames/`, `src-tauri/src/pipeline/`.
+- **Owns**: `src/frames/`, `src-tauri/src/pipeline/`, and the body of `submit_frame` in
+  `src-tauri/src/ipc/frames.rs`. It may edit `src/App.svelte` only to start capture per
+  camera and feed `liveView`.
 - **Scope**:
   - Grab frames at a configurable rate and send RGBA over binary IPC.
   - Keep at most one frame in flight per camera and drop the rest.
   - The Rust handler runs a `Recognize` impl (`FakeRecognizer` from F2a) on a worker thread and emits
     detections tagged with the frame timestamp.
+- **Decided**:
+  - Per camera, draw the `<video>` to an offscreen canvas at the **settings rate**
+    (`inference_fps`, default 6) at **full resolution**, and `submitFrame` it.
+  - At most one frame is in flight per camera.
+  - **One Rust worker thread** owns the `Recognize` implementation, currently
+    `FakeRecognizer`, and serves all cameras in arrival order.
+  - Results go to `liveView.setDetections(camera, …)`. Feeding the tracker is I1.
 - **Done when**:
   - [ ] With a recognizer that sleeps 500 ms, the preview stays at full fps, no frames
     queue up, and memory stays flat over 10 minutes.
@@ -396,12 +442,32 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - [x] Panels update on fake `Confirmed` and `Lost` events.
 
 #### D4: First run, settings, cache screens
-- **Branch**: `feat/settings-models`. **Owns**: `src/settings/`, `src-tauri/src/models/`,
-  `src-tauri/src/settings/`.
+- **Branch**: `feat/settings-models`. **Depends on**: merges after D2.
+- **Owns**:
+  - `src/settings/`, `src-tauri/src/models/`, `src-tauri/src/settings/`;
+  - the handlers of `get_settings`, `update_settings`, `model_status` and
+    `download_models` in `src-tauri/src/ipc/commands.rs`;
+  - `src-tauri/Cargo.toml`.
+  - It may add a Settings button to the toolbar and the models banner in
+    `src/App.svelte`/`src/layout/`.
 - **Scope**:
   - A first-run model download driven by the manifest: progress, resume, sha256 check.
   - Settings: card language, ViT variant, inference rate, deck selection.
   - A cache screen: sizes, clear images, re-sync data, delete models.
+- **Decided**:
+  - Settings are saved as `settings.json` in the app data directory, written
+    atomically. No plugin.
+  - A **Settings** button in the toolbar opens a modal with tabs: **General** (card
+    language, inference fps), **Models** (variant, download), **Cache** (sizes, clear,
+    Sync now), **Deck** (choose a deck).
+  - **First run**: a non-blocking banner, "Recognition models not installed:
+    Download (size)". The camera works meanwhile.
+  - Downloads:
+    - write to a `.part` file;
+    - **resume** with HTTP Range requests;
+    - verify the sha256 against the manifest, then rename into place.
+  - Dependencies: `reqwest` (rustls), `sha2` and `tokio` in `src-tauri`.
+  - Cache and sync commands stay stubs until I1.
 - **Done when**:
   - [ ] An interrupted download resumes.
   - [ ] A corrupted file is detected and fetched again.
