@@ -202,7 +202,10 @@ fn a_file_that_does_not_parse_is_rejected_and_not_copied() {
         ),
         "{error:?}"
     );
-    assert_eq!(files_under(&temp.path().join("decks")), [] as [String; 0]);
+    assert_eq!(
+        files_under(&temp.path().join("decks")),
+        Vec::<String>::new()
+    );
     assert_eq!(store.list().unwrap(), []);
 }
 
@@ -292,7 +295,7 @@ fn remove_deletes_the_deck_list() {
 }
 
 #[test]
-fn an_id_that_is_not_in_the_store_is_not_found() {
+fn an_id_that_is_not_in_the_store_or_reaches_outside_it_is_not_found() {
     let (temp, store) = store();
     download(&temp, "outside.ydk", YGOPRODECK);
 
@@ -307,4 +310,56 @@ fn an_id_that_is_not_in_the_store_is_not_found() {
             "remove {id:?}"
         );
     }
+}
+
+#[test]
+fn the_id_is_the_name_as_a_lowercase_ascii_slug() {
+    for (name, id) in [
+        ("Blue-Eyes (2024)", "blue-eyes-2024"),
+        ("  --Dark  Magician!! ", "dark-magician"),
+        ("Snake-Eye_Fire.King", "snake-eye-fire-king"),
+        ("青眼", "deck"),
+    ] {
+        let deck = Deck::parse_ydk(name, "").unwrap();
+        assert_eq!(deck.id, DeckId(id.to_owned()), "{name:?}");
+        assert_eq!(deck.name, name);
+    }
+}
+
+#[test]
+fn a_comment_line_in_another_encoding_does_not_reject_the_file() {
+    let (temp, store) = store();
+    // "José" in Latin-1, as an old editor might save it: not valid UTF-8.
+    let bytes = b"#created by Jos\xe9\r\n#main\r\n14558127\r\n".as_slice();
+    let source = temp.path().join("downloads/Ash.ydk");
+    fs::write(&source, bytes).unwrap();
+
+    let deck = store.import(&source).unwrap();
+
+    assert_eq!(deck.main, [Passcode(14_558_127)]);
+    assert_eq!(
+        fs::read(temp.path().join("decks/ash/Ash.ydk")).unwrap(),
+        bytes
+    );
+    assert_eq!(store.load(&deck.id).unwrap(), deck);
+}
+
+#[test]
+fn list_skips_folders_that_do_not_hold_a_deck_list() {
+    let (temp, store) = store();
+    let deck = store.import(download(&temp, "Kept.ydk", EDOPRO)).unwrap();
+    let decks = temp.path().join("decks");
+    fs::create_dir(decks.join("broken")).unwrap();
+    fs::write(decks.join("broken/Broken.ydk"), "#main\nnot a passcode\n").unwrap();
+    fs::create_dir(decks.join("empty")).unwrap();
+    fs::write(decks.join("stray.ydk"), EDOPRO).unwrap();
+
+    let ids: Vec<DeckId> = store
+        .list()
+        .unwrap()
+        .into_iter()
+        .map(|deck| deck.id)
+        .collect();
+
+    assert_eq!(ids, [deck.id]);
 }

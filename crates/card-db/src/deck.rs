@@ -173,25 +173,18 @@ impl DeckStore {
     ///
     /// # Errors
     ///
-    /// - [`DeckStoreError::Io`] if the file cannot be read (including when it is not
-    ///   UTF-8 text) or the copy cannot be written.
+    /// - [`DeckStoreError::Io`] if the file cannot be read or the copy cannot be
+    ///   written.
     /// - [`DeckStoreError::InvalidDeck`] if the file is not a deck list. Nothing is
     ///   copied.
     pub fn import(&self, path: impl AsRef<Path>) -> Result<Deck, DeckStoreError> {
         let path = path.as_ref();
-        let text = fs::read_to_string(path).map_err(|source| DeckStoreError::io(path, source))?;
-        let stem = path.file_stem().unwrap_or_default();
-        let mut deck = Deck::parse_ydk(&stem.to_string_lossy(), &text).map_err(|source| {
-            DeckStoreError::InvalidDeck {
-                path: path.to_owned(),
-                source,
-            }
-        })?;
+        let (bytes, mut deck) = read_deck(path)?;
         let (id, folder) = self.create_folder(&deck.id.0)?;
-        let mut file_name = OsString::from(stem);
+        let mut file_name = OsString::from(path.file_stem().unwrap_or_default());
         file_name.push(".ydk");
         let copy = folder.join(file_name);
-        if let Err(source) = fs::write(&copy, &text) {
+        if let Err(source) = fs::write(&copy, &bytes) {
             // Best effort: an empty folder would only be skipped by `list`.
             let _ = fs::remove_dir_all(&folder);
             return Err(DeckStoreError::io(&copy, source));
@@ -228,14 +221,7 @@ impl DeckStore {
     /// - [`DeckStoreError::Io`] if its file cannot be read.
     /// - [`DeckStoreError::InvalidDeck`] if its file no longer parses.
     pub fn load(&self, id: &DeckId) -> Result<Deck, DeckStoreError> {
-        let file = self.deck_file(id)?;
-        let text = fs::read_to_string(&file).map_err(|source| DeckStoreError::io(&file, source))?;
-        let name = file.file_stem().unwrap_or_default().to_string_lossy();
-        let mut deck =
-            Deck::parse_ydk(&name, &text).map_err(|source| DeckStoreError::InvalidDeck {
-                path: file.clone(),
-                source,
-            })?;
+        let (_, mut deck) = read_deck(&self.deck_file(id)?)?;
         deck.id = id.clone();
         Ok(deck)
     }
@@ -247,9 +233,9 @@ impl DeckStore {
     /// - [`DeckStoreError::NotFound`] if there is no deck list `id`.
     /// - [`DeckStoreError::Io`] if its folder cannot be deleted.
     pub fn remove(&self, id: &DeckId) -> Result<(), DeckStoreError> {
-        let file = self.deck_file(id)?;
-        let folder = file.parent().unwrap_or(&self.dir);
-        fs::remove_dir_all(folder).map_err(|source| DeckStoreError::io(folder, source))
+        self.deck_file(id)?;
+        let folder = self.dir.join(&id.0);
+        fs::remove_dir_all(&folder).map_err(|source| DeckStoreError::io(&folder, source))
     }
 
     /// Creates the folder for a new deck list whose id is `slug`, or `slug` with the
@@ -271,7 +257,8 @@ impl DeckStore {
         }
     }
 
-    /// The `.ydk` file of the deck list `id`.
+    /// The `.ydk` file of the deck list `id`. A folder edited by hand to hold several
+    /// takes the first by file name, so the choice is stable.
     fn deck_file(&self, id: &DeckId) -> Result<PathBuf, DeckStoreError> {
         let not_found = || DeckStoreError::NotFound { id: id.clone() };
         // Ids come from the frontend: only a slug may name a folder, so no id reaches
@@ -288,11 +275,27 @@ impl DeckStore {
         entries
             .filter_map(Result::ok)
             .map(|entry| entry.path())
-            .find(|path| {
+            .filter(|path| {
                 path.extension().is_some_and(|extension| extension == "ydk") && path.is_file()
             })
+            .min()
             .ok_or_else(not_found)
     }
+}
+
+/// Reads the `.ydk` file at `path` and parses it into a deck named after the file stem.
+/// Returns the file's bytes too, to copy them unchanged.
+fn read_deck(path: &Path) -> Result<(Vec<u8>, Deck), DeckStoreError> {
+    let bytes = fs::read(path).map_err(|source| DeckStoreError::io(path, source))?;
+    let name = path.file_stem().unwrap_or_default().to_string_lossy();
+    // Lossy, so a `#created by` line saved in another encoding does not reject the file:
+    // a replaced character anywhere else still fails the parse, with its line number.
+    let text = String::from_utf8_lossy(&bytes);
+    let deck = Deck::parse_ydk(&name, &text).map_err(|source| DeckStoreError::InvalidDeck {
+        path: path.to_owned(),
+        source,
+    })?;
+    Ok((bytes, deck))
 }
 
 /// An imported deck list, as listed for the operator.
