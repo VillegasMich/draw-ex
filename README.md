@@ -234,7 +234,7 @@ models/      ONNX files + label JSON + manifest (revision, sha256)
 cards.db     SQLite: card data, sync metadata
 images/      full/ small/ cropped/  <passcode>.jpg
 decks/       imported .ydk files
-duels/       one JSONL log per session (+ recordings, later)
+duels/       one JSONL log per session, named by its UTC start (+ recordings, later)
 settings.json
 ```
 
