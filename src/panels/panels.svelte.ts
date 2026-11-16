@@ -1,6 +1,5 @@
 // The live panel state and duel log: a runes store fed by the tracker's `track-event`
 // events. The pure rules live in `panel-state.ts`.
-import { isTauri } from '@tauri-apps/api/core';
 import { events, type Player, type TrackEvent, type TrackId } from '../lib/bindings';
 import { cardData } from './card-data.svelte';
 import { applyTrackEvent, emptyPanels, featureTrack, type PanelState } from './panel-state';
@@ -43,12 +42,10 @@ export const panels = new Panels();
 /**
  * Starts feeding the panels: reads the card language from the settings and listens for
  * `track-event`. Returns a function that stops listening. Outside Tauri (plain
- * `pnpm dev`, tests) there is no backend, and the panels stay as they are.
+ * `pnpm dev`, tests) there is no backend: both fail with a warning, and the panels stay
+ * as they are.
  */
 export function connectPanels(): () => void {
-  if (!isTauri()) {
-    return () => {};
-  }
   let stopped = false;
   let unlisten: (() => void) | undefined;
 

@@ -14,9 +14,18 @@ specta = ["dep:specta", "domain/specta"]
 
 [dependencies]
 domain.workspace = true
+governor = "0.10.4"
+# rustls (aws-lc-rs) for TLS: no OpenSSL.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde.workspace = true
+# raw_value keeps each card's JSON exactly as YGOPRODeck sent it.
+serde_json = { workspace = true, features = ["raw_value"] }
 specta = { workspace = true, optional = true }
 thiserror.workspace = true
+tokio = { version = "1.54.1", features = ["rt", "sync"] }
 
 [dev-dependencies]
-serde_json.workspace = true
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt"] }
+wiremock = "0.6.5"

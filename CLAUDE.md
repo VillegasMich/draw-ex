@@ -110,40 +110,11 @@ draw-ex consumes it as a pinned Cargo git dependency.
   described in the README. Before committing a dependency bump, confirm the build passes
   with the override removed.
 
-### Porting notes for draw-core (work done in `../draw2`)
+### Porting notes for draw-core
 
-These notes are kept here during the design phase. When implementation of
-`crates/draw-core/` starts in the draw2 fork, move them into that repo's docs and leave a
-pointer here.
-
-The reference implementation is draw2's **browser** pipeline, `docs/scripts/pipeline.js`.
-Port from it, not from the Python `src/draw/draw.py`: the Python version's text-box
-contour orientation step is the main source of `orientation_unknown` failures.
-
-Port map, pipeline.js → draw-core:
-
-- `preprocessYOLO`, `parseYOLOOutput`, `xywhrToCorners`, `nmsOBB`: detection.
-- `solveHomography`, `warpPerspective`: the 224×224 crop.
-- `correctRotation`, `classifyWithRotationFallback`: orientation.
-- `preprocessViT`, `topK`: classification.
-
-Gotchas that are easy to drop during a port:
-
-- **Portrait normalization**: when a box has `w > h`, swap w/h and add π/2 to the angle
-  *before* warping. Without it, the crop comes out squeezed and confidence stays low in
-  every rotation.
-- **YOLO output layout varies**: check whether features come first (`dims[1] < dims[2]`)
-  instead of hard-coding the layout.
-- **`topK` softmax**: apply softmax only when the outputs are logits (max > 1).
-- **Two label files**: the `yugiscan` ViT uses `card_labels_yugiscan.json`, with plain
-  `Name-<passcode>` strings. The other ViTs use `cardnames_onnx.json`, keyed by output
-  index.
-- **Deck filtering needs a deep top-k**: Python uses 15. A top-3 rarely contains the deck
-  card.
-
-Golden tests: run draw2 (`uv run python -m draw --source <img> -v --log-json out.jsonl`)
-and compare its results with draw-core on the same images.
-`docs/samples/sample_photo.jpg` should give Monster Reborn `83764719`.
+They live in the draw2 fork's `CLAUDE.md` (moved there in A1): the port map from
+`docs/scripts/pipeline.js`, the gotchas, and how golden tests work. Read them before any
+draw-core work.
 
 ## Invariants
 
@@ -172,7 +143,25 @@ needed an emergency fix for exactly this. So:
 
 - macOS camera access in the webview needs `NSCameraUsageDescription` in `Info.plist`
   plus the `com.apple.security.device.camera` entitlement for hardened-runtime and
-  notarized builds.
+  notarized builds. Both are in place:
+  - `src-tauri/Info.plist` holds `NSCameraUsageDescription`. The bundler merges it into
+    the app's `Info.plist`, and for `tauri dev` tauri-codegen embeds it into the debug
+    binary, so dev builds need nothing else.
+  - `src-tauri/entitlements.plist` holds the camera entitlement. `tauri.conf.json`
+    references it from `bundle.macOS.entitlements`; bundles use the hardened runtime by
+    default.
+  - The WKWebView never asks on its own: with no `on_permission_request` handler, wry
+    grants the page's media-capture request. The only prompt is macOS's camera prompt.
+    Under `tauri dev` the unbundled binary's prompt and permission belong to the app that
+    launched it (the terminal or IDE), so allow the camera there in System Settings →
+    Privacy & Security → Camera. If that app already has camera access, no prompt
+    appears at all (seen when D1 was verified).
+- Windows camera access goes through WebView2. With no permission handler, WebView2
+  shows its own browser-style prompt on the first `getUserMedia` and saves the answer in
+  the webview profile, per origin (dev `http://localhost:<port>` and the bundled app are
+  different origins). Windows Settings → Privacy & security → Camera → "Let desktop apps
+  access your camera" must be on. To skip the prompt, `src-tauri` could grant
+  `PermissionKind::Camera` in an `on_permission_request` handler (not done).
 - ONNX Runtime (via draw-core's `ort` dependency): CoreML on macOS, DirectML on Windows,
   CPU fallback. The runtime library must end up inside the Tauri bundle. Verify a
   packaged build on a clean machine, not only `tauri dev`.

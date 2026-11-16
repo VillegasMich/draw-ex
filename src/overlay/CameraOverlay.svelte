@@ -1,36 +1,55 @@
 <!--
-  Everything drawn over the camera on screen: detection outlines and, for a "both sides"
-  setup, the split line handle. It fills its positioned parent, the area the `<video>`
-  fills with `object-fit: contain`. In dev builds it also offers the scripted demo.
+  Everything drawn over one camera's video: detection outlines and, for a one-camera
+  both-players setup on this camera, the split line handle. Mount it in `CameraView`'s
+  `overlay` snippet: it fills the view, the same area the `<video>` fills with
+  `object-fit: contain`, and reads the frame size from that video.
 -->
 <script lang="ts">
-  import { liveView } from './live-view.svelte';
+  import { untrack } from 'svelte';
+  import type { CameraId } from '../lib/bindings';
   import DetectionOverlay from './DetectionOverlay.svelte';
+  import { liveView } from './live-view.svelte';
   import SplitLineHandle from './SplitLineHandle.svelte';
 
-  // Dev only: in a production build this is `null` and the demo module is not bundled.
-  const demo = import.meta.env.DEV ? import('./demo/Demo.svelte') : null;
+  interface Props {
+    camera: CameraId;
+    /** The camera's `<video>`; its `videoWidth` × `videoHeight` is the frame size. */
+    video?: HTMLVideoElement;
+  }
+
+  let { camera, video }: Props = $props();
+
+  $effect(() => {
+    if (!video) return;
+    const element = video;
+    const id = camera;
+    const report = () =>
+      liveView.setFrame(id, { width: element.videoWidth, height: element.videoHeight });
+    // Untracked: `setFrame` reads the frames, which must not re-run this effect.
+    untrack(report);
+    element.addEventListener('loadedmetadata', report);
+    element.addEventListener('resize', report);
+    return () => {
+      element.removeEventListener('loadedmetadata', report);
+      element.removeEventListener('resize', report);
+    };
+  });
+
+  const frame = $derived(liveView.frames[camera]);
 </script>
 
-<div class="camera-overlay">
-  {#if demo}
-    {#await demo then { default: Demo }}
-      <Demo />
-    {/await}
-  {/if}
-
-  {#if liveView.camera !== null}
-    {@const camera = liveView.camera}
+{#if frame}
+  <div class="camera-overlay">
     <DetectionOverlay
-      frame={liveView.frame}
+      {frame}
       {camera}
       setup={liveView.setup}
-      detections={liveView.detections}
+      detections={liveView.detections(camera)}
     />
     {#if liveView.setup?.kind === 'splitLine' && liveView.setup.camera === camera}
       {@const setup = liveView.setup}
       <SplitLineHandle
-        frame={liveView.frame}
+        {frame}
         {camera}
         line={setup.line}
         onchange={(line) => {
@@ -38,8 +57,8 @@
         }}
       />
     {/if}
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
   .camera-overlay {

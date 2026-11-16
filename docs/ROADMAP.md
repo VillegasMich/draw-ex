@@ -187,9 +187,9 @@ Contract rules for both tickets:
 
 ### Stream A: draw-core (draw2 fork)
 
-Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in
-[`../CLAUDE.md`](../CLAUDE.md#porting-notes-for-draw-core-work-done-in-draw2). The first
-A ticket to start moves them into the draw2 repo's docs and leaves a pointer here.
+Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the draw2 fork's
+`CLAUDE.md` (moved there in A1). The ONNX Runtime environment is shared through
+`draw_core::runtime` (one per process); A2 and A3 must use it.
 
 #### A1: Detection
 - **Branch**: `feat/draw-core-detect`. **Owns**: `crates/draw-core/src/detect/`, its
@@ -249,18 +249,26 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - SQLite schema and passcode normalization.
 - **Decided**:
   - Languages: always sync **English**. Sync the selected card language on demand
-    (fr/de/it/pt) when it is chosen.
+    (fr/de/it/pt) when it is chosen (`CardDb::request_language`). If the
+    `database_version` is unchanged, the next sync downloads only the newly requested
+    language; a new `database_version` re-downloads English and every requested
+    language. Lookups fall back to English.
+  - Rate limit: 10 requests/s with no burst (requests at least 100 ms apart), shared with
+    the image cache.
+  - Alternate artworks are not cards: their image IDs are stored as aliases, and a
+    lookup by one returns the card it belongs to.
   - When: on startup, check `checkDBVer.php` **at most once every 24 h**, plus a manual
     "Sync now" (`sync_card_db`). Offline, the app still works, and unknown cards show
-    without details.
+    without details. `CardDb::needs_check(now)` tells startup whether a check is due;
+    only a sync that finishes counts as a check.
   - Dependencies: `rusqlite` (`bundled`), `reqwest` (`rustls`, no OpenSSL), `tokio`,
     `governor`, `serde_json`, and a fixture HTTP mock (e.g. `wiremock`) for tests.
   - Storage: the fields `Card` needs as columns, plus each card's raw JSON for future
     use.
 - **Done when**:
-  - [ ] Sync runs against recorded fixtures (tests never hit the live API).
-  - [ ] A second sync with an unchanged `database_version` makes exactly one request.
-  - [ ] Lookup by passcode returns the localized fields.
+  - [x] Sync runs against recorded fixtures (tests never hit the live API).
+  - [x] A second sync with an unchanged `database_version` makes exactly one request.
+  - [x] Lookup by passcode returns the localized fields.
 
 #### B2: Image cache
 - **Branch**: `feat/card-db-images`. **Depends on**: B1 (limiter + client).
@@ -306,7 +314,7 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - Duplicate copies on the table are separate tracks, kept apart by position, and both
     are reported.
 - **Done when**:
-  - [ ] Synthetic sequences show: flicker does not create duplicate tracks; one misread
+  - [x] Synthetic sequences show: flicker does not create duplicate tracks; one misread
     frame does not change a confirmed card; a removed card emits `Lost`.
 
 #### C2: Player assignment and duel log
@@ -340,8 +348,11 @@ A ticket to start moves them into the draw2 repo's docs and leaves a pointer her
   - Each camera is requested at **1920×1080 ideal**, falling back to what the camera
     supports.
 - **Done when**:
-  - [ ] Each setup shows live preview on macOS and Windows.
-  - [ ] Unplugging a camera shows an error instead of a frozen frame.
+  - [x] Each setup shows live preview on macOS (built-in camera; Two cameras verified
+    with the same camera twice).
+  - [ ] Each setup shows live preview on Windows.
+  - [x] Unplugging a camera shows an error instead of a frozen frame (simulated in
+    `src/App.test.ts` with an ended track; not physically unplugged).
 
 #### D2: Frame pipeline
 - **Branch**: `feat/frame-pipeline`. **Depends on**: D1 (a `<video src=sample.mp4>`
