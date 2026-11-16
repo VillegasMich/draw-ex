@@ -52,3 +52,29 @@ export function setupCameras(selection: SetupSelection): CameraId[] {
     ? [...new Set([selection.a, selection.b])]
     : [selection.camera];
 }
+
+/** The interface name of a player: "Player A" or "Player B". */
+export function playerName(player: Player): string {
+  return player === 'a' ? 'Player A' : 'Player B';
+}
+
+/**
+ * A one-line description of `selection` for the toolbar, naming cameras with
+ * `cameraLabel` (their device labels).
+ */
+export function describeSelection(
+  selection: SetupSelection | null,
+  cameraLabel: (id: CameraId) => string,
+): string {
+  if (!selection) {
+    return 'No camera setup';
+  }
+  switch (selection.kind) {
+    case 'oneSide':
+      return `One side: ${cameraLabel(selection.camera)} on ${playerName(selection.player)}`;
+    case 'splitLine':
+      return `Both sides: ${cameraLabel(selection.camera)}`;
+    case 'twoCameras':
+      return `Two cameras: ${cameraLabel(selection.a)} on Player A, ${cameraLabel(selection.b)} on Player B`;
+  }
+}

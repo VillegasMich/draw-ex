@@ -4,6 +4,7 @@
     browserStorage,
     CameraView,
     describeCameraFailure,
+    describeSelection,
     listCameras,
     loadSetup,
     onCamerasChanged,
@@ -25,19 +26,48 @@
   let accessError = $state.raw<CameraError | null>(null);
   let selection = $state.raw<SetupSelection | null>(null);
   /** A selection not yet sent to `setCameraSetup` (Both sides waits for the video size). */
-  let unsent = $state.raw<SetupSelection | null>(null);
+  let pendingSetup = $state.raw<SetupSelection | null>(null);
+  /** Counts `setCameraSetup` calls, so only the latest one's outcome is shown. */
+  let setupRequest = 0;
   let videoSizes = $state<Record<CameraId, VideoSize>>({});
   let setupOpen = $state(false);
   let setupProblem = $state<string | null>(null);
 
   let slots = $derived(selection ? cameraSlots(selection) : []);
-  let summary = $derived(describeSelection(selection, cameras));
+  let summary = $derived(
+    describeSelection(
+      selection,
+      (id) => cameras.find((camera) => camera.id === id)?.label ?? 'Camera',
+    ),
+  );
 
   async function refreshCameras() {
     try {
       cameras = await listCameras();
     } catch {
       cameras = [];
+    }
+  }
+
+  /** Applies the remembered setup if there is none yet and its cameras are present. */
+  function restoreSetup() {
+    if (selection) {
+      return;
+    }
+    const remembered = loadSetup(
+      browserStorage(),
+      cameras.map((camera) => camera.id),
+    );
+    if (remembered) {
+      apply(remembered);
+    }
+  }
+
+  /** On plug or unplug: list the cameras again, and restore a setup whose camera is back. */
+  async function onDevicesChanged() {
+    await refreshCameras();
+    if (!accessError) {
+      restoreSetup();
     }
   }
 
@@ -57,21 +87,14 @@
       // Any other failure (e.g. the default camera is busy) still lets the operator pick.
     }
     await refreshCameras();
-    if (!selection) {
-      const remembered = loadSetup(
-        browserStorage(),
-        cameras.map((camera) => camera.id),
-      );
-      if (remembered) {
-        apply(remembered);
-      }
-    }
+    restoreSetup();
     connecting = false;
   }
 
+  // The backend keeps the camera setup in memory only, so a restored setup is sent too.
   function apply(next: SetupSelection) {
     selection = next;
-    unsent = next;
+    pendingSetup = next;
   }
 
   function save(next: SetupSelection) {
@@ -81,40 +104,35 @@
   }
 
   $effect(() => {
-    if (!unsent) {
+    if (!pendingSetup) {
       return;
     }
-    const size = unsent.kind === 'splitLine' ? (videoSizes[unsent.camera] ?? null) : null;
-    const setup = toCameraSetup(unsent, size);
+    const size =
+      pendingSetup.kind === 'splitLine' ? (videoSizes[pendingSetup.camera] ?? null) : null;
+    const setup = toCameraSetup(pendingSetup, size);
     if (!setup) {
       return;
     }
-    unsent = null;
+    pendingSetup = null;
+    const request = ++setupRequest;
     commands.setCameraSetup(setup).then(
-      () => (setupProblem = null),
-      (error: IpcError) => (setupProblem = `The camera setup was not applied: ${error.message}`),
+      () => {
+        if (request === setupRequest) {
+          setupProblem = null;
+        }
+      },
+      (error: IpcError) => {
+        if (request === setupRequest) {
+          setupProblem = `The camera setup was not applied: ${error.message}`;
+        }
+      },
     );
   });
 
   onMount(() => {
     void connect();
-    return onCamerasChanged(() => void refreshCameras());
+    return onCamerasChanged(() => void onDevicesChanged());
   });
-
-  function describeSelection(current: SetupSelection | null, devices: CameraDevice[]): string {
-    if (!current) {
-      return 'No camera setup';
-    }
-    const name = (id: CameraId) => devices.find((device) => device.id === id)?.label ?? 'Camera';
-    switch (current.kind) {
-      case 'oneSide':
-        return `One side: ${name(current.camera)} on Player ${current.player.toUpperCase()}`;
-      case 'splitLine':
-        return `Both sides: ${name(current.camera)}`;
-      case 'twoCameras':
-        return `Two cameras: ${name(current.a)} on Player A, ${name(current.b)} on Player B`;
-    }
-  }
 </script>
 
 <div class="layout">

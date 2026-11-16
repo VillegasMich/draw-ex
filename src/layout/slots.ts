@@ -1,10 +1,10 @@
-import type { CameraId } from '../lib/bindings';
-import type { SetupSelection } from '../camera/setup';
+import type { CameraId, Player } from '../lib/bindings';
+import { playerName, type SetupSelection } from '../camera/setup';
 
 /** One camera region in the center column. */
 export interface CameraSlot {
   /** Stable per position, so the same camera can fill both slots of Two cameras. */
-  key: 'a' | 'b' | 'both';
+  key: Player | 'both';
   cameraId: CameraId;
   /** The region's accessible name. */
   label: string;
@@ -32,8 +32,4 @@ export function cameraSlots(selection: SetupSelection): CameraSlot[] {
         { key: 'a', cameraId: selection.a, label: 'Camera for Player A' },
       ];
   }
-}
-
-function playerName(player: 'a' | 'b'): string {
-  return player === 'a' ? 'Player A' : 'Player B';
 }

@@ -185,8 +185,6 @@ needed an emergency fix for exactly this. So:
     launched it (the terminal or IDE), so allow the camera there in System Settings →
     Privacy & Security → Camera. If that app already has camera access, no prompt
     appears at all (seen when D1 was verified).
-  - Orca's background clicks cannot reach WKWebView content in the unbundled dev
-    window, so drive UI checks through tests or by hand.
 - Windows camera access goes through WebView2. With no permission handler, WebView2
   shows its own browser-style prompt on the first `getUserMedia` and saves the answer in
   the webview profile, per origin (dev `http://localhost:<port>` and the bundled app are

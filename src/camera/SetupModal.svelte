@@ -22,13 +22,13 @@
   type Kind = SetupSelection['kind'];
 
   const KINDS: { kind: Kind; name: string; hint: string }[] = [
-    { kind: 'oneSide', name: 'One side', hint: "One camera on one player's side." },
+    { kind: 'oneSide', name: 'One side', hint: "One camera on one player's half of the table." },
     {
       kind: 'splitLine',
       name: 'Both sides',
       hint: 'One camera over the whole table. The split line starts across the middle: Player A below it, Player B above.',
     },
-    { kind: 'twoCameras', name: 'Two cameras', hint: 'One camera on each side.' },
+    { kind: 'twoCameras', name: 'Two cameras', hint: 'One camera for each player.' },
   ];
 
   let dialog = $state<HTMLDialogElement>();
@@ -87,7 +87,7 @@
     <h2 id="setup-title">Camera setup</h2>
 
     <fieldset>
-      <legend>Cameras</legend>
+      <legend>Setup</legend>
       {#each KINDS as option (option.kind)}
         <label class="choice">
           <input type="radio" name="kind" value={option.kind} bind:group={kind} />

@@ -33,6 +33,7 @@
 
   $effect(() => {
     const id = cameraId;
+    // Retry bumps `attempt`; reading it makes this effect reopen the camera.
     void attempt;
     let stream: MediaStream | undefined;
     let closed = false;
@@ -87,8 +88,10 @@
   });
 
   $effect(() => {
-    if (video && camera.status === 'live') {
-      video.srcObject = camera.stream;
+    // Detach a stopped stream at once: a <video> keeps showing its last frame otherwise,
+    // which would look like a frozen camera while another one opens.
+    if (video) {
+      video.srcObject = camera.status === 'live' ? camera.stream : null;
     }
   });
 
