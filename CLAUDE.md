@@ -143,7 +143,25 @@ needed an emergency fix for exactly this. So:
 
 - macOS camera access in the webview needs `NSCameraUsageDescription` in `Info.plist`
   plus the `com.apple.security.device.camera` entitlement for hardened-runtime and
-  notarized builds.
+  notarized builds. Both are in place:
+  - `src-tauri/Info.plist` holds `NSCameraUsageDescription`. The bundler merges it into
+    the app's `Info.plist`, and for `tauri dev` tauri-codegen embeds it into the debug
+    binary, so dev builds need nothing else.
+  - `src-tauri/entitlements.plist` holds the camera entitlement. `tauri.conf.json`
+    references it from `bundle.macOS.entitlements`; bundles use the hardened runtime by
+    default.
+  - The WKWebView never asks on its own: with no `on_permission_request` handler, wry
+    grants the page's media-capture request. The only prompt is macOS's camera prompt.
+    Under `tauri dev` the unbundled binary's prompt and permission belong to the app that
+    launched it (the terminal or IDE), so allow the camera there in System Settings →
+    Privacy & Security → Camera. If that app already has camera access, no prompt
+    appears at all (seen when D1 was verified).
+- Windows camera access goes through WebView2. With no permission handler, WebView2
+  shows its own browser-style prompt on the first `getUserMedia` and saves the answer in
+  the webview profile, per origin (dev `http://localhost:<port>` and the bundled app are
+  different origins). Windows Settings → Privacy & security → Camera → "Let desktop apps
+  access your camera" must be on. To skip the prompt, `src-tauri` could grant
+  `PermissionKind::Camera` in an `on_permission_request` handler (not done).
 - ONNX Runtime (via draw-core's `ort` dependency): CoreML on macOS, DirectML on Windows,
   CPU fallback. The runtime library must end up inside the Tauri bundle. Verify a
   packaged build on a clean machine, not only `tauri dev`.
