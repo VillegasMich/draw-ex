@@ -1,0 +1,3 @@
+# Keep each .ydk byte for byte: edopro.ydk has CRLF line endings on purpose, which the
+# repo-wide `eol=lf` rule would otherwise normalize away.
+*.ydk -text
