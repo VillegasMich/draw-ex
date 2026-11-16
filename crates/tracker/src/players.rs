@@ -40,7 +40,11 @@ pub enum CameraSetup {
 
 impl CameraSetup {
     /// The player a card seen by `camera` at `point` (in that camera's source-frame
-    /// pixels) belongs to, or `None` when `camera` is not part of this setup.
+    /// pixels) belongs to, or `None` when `camera` is not part of this setup, in which
+    /// case the card should be ignored.
+    ///
+    /// For a card, pass the center of its quad: the [`Tracker`](crate::Tracker) uses
+    /// the center of the quad's axis-aligned bounds.
     ///
     /// - `OneSide`: the configured player, wherever the point is.
     /// - `SplitLine`: [`SplitLine::player_at`] of the point.
@@ -338,6 +342,43 @@ mod tests {
             setup.player_for(&camera("right"), point(5.0, 5.0)),
             Some(Player::B)
         );
+    }
+
+    #[test]
+    fn two_cameras_setup_with_the_same_camera_twice_gives_player_a() {
+        let setup = CameraSetup::TwoCameras {
+            a: camera("cam-1"),
+            b: camera("cam-1"),
+        };
+
+        assert_eq!(
+            setup.player_for(&camera("cam-1"), point(5.0, 5.0)),
+            Some(Player::A)
+        );
+    }
+
+    #[test]
+    fn split_line_setup_with_a_degenerate_line_gives_every_point_to_player_a() {
+        let setup = CameraSetup::SplitLine {
+            camera: camera("cam-1"),
+            line: SplitLine {
+                from: point(300.0, 200.0),
+                to: point(300.0, 200.0),
+            },
+        };
+
+        for at in [
+            point(0.0, 0.0),
+            point(300.0, 200.0),
+            point(1919.0, 1079.0),
+            point(301.0, 0.0),
+        ] {
+            assert_eq!(
+                setup.player_for(&camera("cam-1"), at),
+                Some(Player::A),
+                "{at:?}"
+            );
+        }
     }
 
     #[test]

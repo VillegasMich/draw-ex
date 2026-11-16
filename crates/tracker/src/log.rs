@@ -169,6 +169,10 @@ impl DuelLog {
 
     /// Appends one event to the log, with its derived wall-clock time.
     ///
+    /// Times are expected to be finite, as the contract requires: JSON has no
+    /// infinity or NaN, so such a time would be written as `null` and
+    /// [`DuelLog::read`] would reject the line.
+    ///
     /// # Errors
     ///
     /// [`LogError::Io`] if the event cannot be written.
@@ -231,9 +235,14 @@ impl DuelLog {
 
 /// Writes `value` to `file` as one JSON line and flushes it.
 fn write_line(file: &mut File, value: &impl Serialize) -> Result<(), LogError> {
+    // Serializing the log's own types cannot fail (string keys, no custom
+    // serializers), so a failure here is reported as the write failing.
     let mut line = serde_json::to_vec(value).map_err(std::io::Error::other)?;
     line.push(b'\n');
-    // One write for the whole line, so a crash can only cut off its end.
+    // The line is handed over whole, never interleaved with another, so a crash can
+    // at worst cut off its end, which `read` tolerates. `File` is unbuffered: once
+    // `write_all` returns the line is with the operating system, and `flush` only
+    // guards against a buffered writer replacing `File` later.
     file.write_all(&line)?;
     file.flush()?;
     Ok(())
@@ -281,7 +290,7 @@ fn parse_line<T: DeserializeOwned>(line: &[u8], number: usize) -> Result<T, LogE
     })
 }
 
-/// Why the duel log could not be written.
+/// Why the duel log could not be written or read.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum LogError {
@@ -309,7 +318,7 @@ mod tests {
 
     fn session() -> SessionInfo {
         SessionInfo {
-            id: SessionId("2026-11-14T15-52-00".into()),
+            id: SessionId("2025-11-14T15-52-00".into()),
             started_at_ms: 1_763_135_520_000.0,
         }
     }
@@ -396,7 +405,7 @@ mod tests {
             .collect();
         assert_eq!(wall_clock, [1_763_135_521_234.5, 1_763_135_519_000.0]);
 
-        let text = std::fs::read_to_string(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
         let lines: Vec<serde_json::Value> = text
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
@@ -404,7 +413,7 @@ mod tests {
         assert_eq!(
             lines[0],
             json!({
-                "id": "2026-11-14T15-52-00",
+                "id": "2025-11-14T15-52-00",
                 "startedAtMs": 1_763_135_520_000.0,
                 "setup": {
                     "kind": "splitLine",
@@ -431,10 +440,10 @@ mod tests {
     }
 
     #[test]
-    fn each_line_is_on_disk_as_soon_as_it_is_written() {
+    fn each_line_reaches_the_file_as_soon_as_it_is_appended() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("duel.jsonl");
-        let line_count = || std::fs::read_to_string(&path).unwrap().lines().count();
+        let line_count = || fs::read_to_string(&path).unwrap().lines().count();
 
         let mut log = DuelLog::start(&path, &session(), &setup(), 0.0).unwrap();
         assert_eq!(line_count(), 1, "the header is on disk once start returns");
@@ -454,7 +463,7 @@ mod tests {
     fn starting_a_log_never_overwrites_an_existing_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("duel.jsonl");
-        std::fs::write(&path, "an earlier duel\n").unwrap();
+        fs::write(&path, "an earlier duel\n").unwrap();
 
         let error = DuelLog::start(&path, &session(), &setup(), 0.0).unwrap_err();
 
@@ -462,7 +471,7 @@ mod tests {
             matches!(&error, LogError::Io(io) if io.kind() == std::io::ErrorKind::AlreadyExists),
             "{error:?}"
         );
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "an earlier duel\n");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "an earlier duel\n");
     }
 
     /// Writes a log with a header and `count` events, then appends `raw` bytes as if
@@ -506,9 +515,9 @@ mod tests {
     #[test]
     fn read_rejects_a_file_without_a_complete_header() {
         let dir = tempfile::tempdir().unwrap();
-        for raw in [&b""[..], br#"{"id":"2026-11-14T15-52-00","startedAt"#] {
+        for raw in [&b""[..], br#"{"id":"2025-11-14T15-52-00","startedAt"#] {
             let path = dir.path().join("cut.jsonl");
-            std::fs::write(&path, raw).unwrap();
+            fs::write(&path, raw).unwrap();
 
             let error = DuelLog::read(&path).unwrap_err();
 
@@ -543,10 +552,10 @@ mod tests {
     #[test]
     fn session_info_round_trips_with_camel_case_keys() {
         let session = SessionInfo {
-            id: SessionId("2026-11-14T15-52-00".into()),
+            id: SessionId("2025-11-14T15-52-00".into()),
             started_at_ms: 1_763_135_520_000.0,
         };
-        let expected = json!({ "id": "2026-11-14T15-52-00", "startedAtMs": 1_763_135_520_000.0 });
+        let expected = json!({ "id": "2025-11-14T15-52-00", "startedAtMs": 1_763_135_520_000.0 });
 
         assert_eq!(serde_json::to_value(&session).unwrap(), expected);
         assert_eq!(
