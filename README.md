@@ -189,6 +189,14 @@ The ONNX files are hosted on Hugging Face at
   data directory. A progress UI shows the download.
 - Which files to fetch comes from **draw-core's model manifest**. Downloads are pinned to
   a specific Hugging Face **commit**, not `main`, and checked against a SHA-256.
+- A download is written to `<file>.part`, **resumed** with an HTTP `Range` request after
+  an interruption, verified, then renamed into place. A checksum mismatch discards it and
+  downloads once more from zero. A file already in place is hashed again before a
+  download, so a corrupted one is fetched again. The status shown in the UI only checks
+  file sizes, because hashing hundreds of megabytes on every check is too slow.
+- Settings live in `settings.json`, written atomically (temporary file + rename). A file
+  that cannot be read or fails validation is moved to `settings.json.bak` and the
+  defaults are used.
 - The default ViT variant will be chosen from benchmarks on real hardware. The user can
   switch variants in settings.
 
@@ -230,7 +238,8 @@ Design:
 All paths are under the OS app-data directory resolved by Tauri:
 
 ```
-models/      ONNX files + label JSON + manifest (revision, sha256)
+models/      onnx/<file> as draw-core's manifest names it (ONNX + label JSON);
+             <file>.part while a download is in progress
 cards.db     SQLite: card data, sync metadata
 images/      full/ small/ cropped/  <passcode>.jpg
 decks/       imported .ydk files
