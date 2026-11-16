@@ -12,6 +12,12 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const ASH_BLOSSOM: Passcode = Passcode(14_558_127);
+const DARK_MAGICIAN: Passcode = Passcode(46_986_414);
+const POT_OF_GREED: Passcode = Passcode(55_144_522);
+const DECODE_TALKER: Passcode = Passcode(1_861_629);
+
+/// YGOPRODeck's limiter allows one request per 100 ms.
+const LIMITER_SPACING: Duration = Duration::from_millis(100);
 
 /// A tiny stand-in JPEG of exactly `len` bytes: start and end markers around zeros.
 fn jpeg(len: usize) -> Vec<u8> {
@@ -155,9 +161,6 @@ async fn a_failed_download_leaves_no_file_behind_and_is_retried() {
     assert_eq!(request_count(&server).await, 2);
 }
 
-const DARK_MAGICIAN: Passcode = Passcode(46_986_414);
-const POT_OF_GREED: Passcode = Passcode(55_144_522);
-
 #[tokio::test]
 async fn the_cap_evicts_the_least_recently_used_images_first() {
     let server = MockServer::start().await;
@@ -297,11 +300,6 @@ fn clearing_a_cache_that_was_never_used_succeeds() {
 
     assert_eq!(cache.stats().count, 0);
 }
-
-const DECODE_TALKER: Passcode = Passcode(1_861_629);
-
-/// YGOPRODeck's limiter allows one request per 100 ms.
-const LIMITER_SPACING: Duration = Duration::from_millis(100);
 
 #[tokio::test]
 async fn prefetch_downloads_only_the_missing_images_through_the_limiter() {

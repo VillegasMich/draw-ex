@@ -105,6 +105,10 @@ pub struct PrefetchReport {
 ///
 /// Every download waits on the YGOPRODeck rate limiter. In the app, create the cache
 /// with [`CardDb::image_cache`], so card data and images share one limiter.
+///
+/// Use one cache per folder: two caches on the same folder do not coordinate their
+/// downloads and evictions. Eviction runs only after a download and spares the image
+/// just downloaded, but an image another call is reading at that moment can be evicted.
 #[derive(Debug)]
 pub struct ImageCache {
     dir: PathBuf,
@@ -233,7 +237,7 @@ impl ImageCache {
         let path = self.path_for(passcode, size);
         let cached = || {
             let path = path.clone();
-            blocking(move || lookup(path, passcode, size))
+            on_blocking_pool(move || lookup(path, passcode, size))
         };
         if let Some(path) = cached().await? {
             return Ok((path, Origin::Cached));
@@ -252,15 +256,15 @@ impl ImageCache {
         self.limiter.until_ready().await;
         let response = self.http.get(url).send().await?;
         if response.status() == StatusCode::NOT_FOUND {
-            blocking(move || mark_missing(&path)).await?;
+            on_blocking_pool(move || mark_missing(&path)).await?;
             return Err(ImageCacheError::NotAvailable { passcode, size });
         }
         let body = response.error_for_status()?.bytes().await?;
 
         let (dir, cap_bytes) = (self.dir.clone(), self.cap_bytes);
-        blocking(move || {
+        on_blocking_pool(move || {
             store(&path, &body)?;
-            evict(&dir, cap_bytes, &path)?;
+            evict(&dir, cap_bytes, &path);
             Ok((path, Origin::Downloaded))
         })
         .await
@@ -300,7 +304,8 @@ impl ImageCache {
     }
 
     /// Deletes every cached image and every missing-image marker, so each image is
-    /// fetched again on its next request.
+    /// fetched again on its next request. The files are deleted on the calling thread.
+    /// A download in progress meanwhile still stores its image.
     ///
     /// # Errors
     ///
@@ -327,7 +332,7 @@ enum Origin {
 }
 
 /// Runs blocking file work on tokio's blocking pool.
-async fn blocking<T: Send + 'static>(
+async fn on_blocking_pool<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ImageCacheError> + Send + 'static,
 ) -> Result<T, ImageCacheError> {
     match tokio::task::spawn_blocking(work).await {
@@ -345,12 +350,15 @@ fn lookup(
     passcode: Passcode,
     size: ImageSize,
 ) -> Result<Option<PathBuf>, ImageCacheError> {
-    if marker_path(&path).exists() {
+    if marker_path(&path).try_exists()? {
         return Err(ImageCacheError::NotAvailable { passcode, size });
     }
     match touch(&path) {
         Ok(()) => Ok(Some(path)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        // Touching needs write access, e.g. no sharing violation on Windows. A cached
+        // image is still served without it; it only ages sooner for eviction.
+        Err(_) if path.is_file() => Ok(Some(path)),
         Err(error) => Err(error.into()),
     }
 }
@@ -401,26 +409,27 @@ fn store(path: &Path, body: &[u8]) -> Result<(), ImageCacheError> {
 
 /// Deletes the least recently used images under `dir` until they total at most
 /// `cap_bytes`, never deleting `keep`.
-fn evict(dir: &Path, cap_bytes: u64, keep: &Path) -> Result<(), ImageCacheError> {
-    let mut images = cached_images(dir)?;
+///
+/// Best effort: the image just stored is already safe on disk, so a failure here must
+/// not fail its request. An image that cannot be listed or deleted (e.g. held open on
+/// Windows) is skipped, and the next download tries again.
+fn evict(dir: &Path, cap_bytes: u64, keep: &Path) {
+    let Ok(mut images) = cached_images(dir) else {
+        return;
+    };
     let mut total: u64 = images.iter().map(|image| image.bytes).sum();
-    if total <= cap_bytes {
-        return Ok(());
-    }
     images.sort_by_key(|image| image.last_used);
     for image in images.iter().filter(|image| image.path != keep) {
         if total <= cap_bytes {
             break;
         }
         match fs::remove_file(&image.path) {
-            Ok(()) => {}
             // Already gone, e.g. cleared meanwhile: it no longer counts either way.
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
+            Ok(()) => total -= image.bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => total -= image.bytes,
+            Err(_) => {}
         }
-        total -= image.bytes;
     }
-    Ok(())
 }
 
 /// One image file in the cache.
