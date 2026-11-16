@@ -1,4 +1,7 @@
-<!-- The slim bar above the camera area: what the camera setup is, and the Setup button. -->
+<!--
+  The slim bar above the camera area: what the camera setup is, and the Setup and
+  Settings buttons.
+-->
 <script lang="ts">
   interface Props {
     /** A short description of the current camera setup. */
@@ -6,9 +9,10 @@
     /** A problem to show next to the summary, e.g. the setup could not be applied. */
     problem?: string | null;
     onsetup: () => void;
+    onsettings: () => void;
   }
 
-  let { summary, problem = null, onsetup }: Props = $props();
+  let { summary, problem = null, onsetup, onsettings }: Props = $props();
 </script>
 
 <div class="toolbar" role="toolbar" aria-label="Camera toolbar">
@@ -17,6 +21,7 @@
     <p class="problem" role="alert">{problem}</p>
   {/if}
   <button type="button" onclick={onsetup}>Setup</button>
+  <button type="button" onclick={onsettings}>Settings</button>
 </div>
 
 <style>
