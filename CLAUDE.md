@@ -110,40 +110,11 @@ draw-ex consumes it as a pinned Cargo git dependency.
   described in the README. Before committing a dependency bump, confirm the build passes
   with the override removed.
 
-### Porting notes for draw-core (work done in `../draw2`)
+### Porting notes for draw-core
 
-These notes are kept here during the design phase. When implementation of
-`crates/draw-core/` starts in the draw2 fork, move them into that repo's docs and leave a
-pointer here.
-
-The reference implementation is draw2's **browser** pipeline, `docs/scripts/pipeline.js`.
-Port from it, not from the Python `src/draw/draw.py`: the Python version's text-box
-contour orientation step is the main source of `orientation_unknown` failures.
-
-Port map, pipeline.js → draw-core:
-
-- `preprocessYOLO`, `parseYOLOOutput`, `xywhrToCorners`, `nmsOBB`: detection.
-- `solveHomography`, `warpPerspective`: the 224×224 crop.
-- `correctRotation`, `classifyWithRotationFallback`: orientation.
-- `preprocessViT`, `topK`: classification.
-
-Gotchas that are easy to drop during a port:
-
-- **Portrait normalization**: when a box has `w > h`, swap w/h and add π/2 to the angle
-  *before* warping. Without it, the crop comes out squeezed and confidence stays low in
-  every rotation.
-- **YOLO output layout varies**: check whether features come first (`dims[1] < dims[2]`)
-  instead of hard-coding the layout.
-- **`topK` softmax**: apply softmax only when the outputs are logits (max > 1).
-- **Two label files**: the `yugiscan` ViT uses `card_labels_yugiscan.json`, with plain
-  `Name-<passcode>` strings. The other ViTs use `cardnames_onnx.json`, keyed by output
-  index.
-- **Deck filtering needs a deep top-k**: Python uses 15. A top-3 rarely contains the deck
-  card.
-
-Golden tests: run draw2 (`uv run python -m draw --source <img> -v --log-json out.jsonl`)
-and compare its results with draw-core on the same images.
-`docs/samples/sample_photo.jpg` should give Monster Reborn `83764719`.
+They live in the draw2 fork's `CLAUDE.md` (moved there in A1): the port map from
+`docs/scripts/pipeline.js`, the gotchas, and how golden tests work. Read them before any
+draw-core work.
 
 ## Invariants
 

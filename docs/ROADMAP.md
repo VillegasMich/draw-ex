@@ -187,9 +187,9 @@ Contract rules for both tickets:
 
 ### Stream A: draw-core (draw2 fork)
 
-Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in
-[`../CLAUDE.md`](../CLAUDE.md#porting-notes-for-draw-core-work-done-in-draw2). The first
-A ticket to start moves them into the draw2 repo's docs and leaves a pointer here.
+Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the draw2 fork's
+`CLAUDE.md` (moved there in A1). The ONNX Runtime environment is shared through
+`draw_core::runtime` (one per process); A2 and A3 must use it.
 
 #### A1: Detection
 - **Branch**: `feat/draw-core-detect`. **Owns**: `crates/draw-core/src/detect/`, its
