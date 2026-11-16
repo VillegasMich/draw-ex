@@ -82,9 +82,9 @@ impl CameraSetup {
 pub struct SplitLine {
     /// Where the line starts, in source-frame pixels.
     pub from: Point,
-    /// A second point the line passes through, in source-frame pixels. It should differ
-    /// from `from`; if it does not, the line is degenerate and every point belongs to
-    /// Player A (see [`SplitLine::player_at`]).
+    /// A second point the line passes through, in source-frame pixels. Must differ from
+    /// `from`.
+    // If it does not, `player_at` still answers deterministically: Player A.
     pub to: Point,
 }
 
