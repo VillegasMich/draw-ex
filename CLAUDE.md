@@ -25,6 +25,11 @@ Tauri v2 OS prerequisites. Run everything from the repo root.
   reads it in `vite.config.ts`, and `scripts/tauri.js` passes the matching `devUrl` to
   `tauri dev` via `--config`. Both use `scripts/dev-port.js`.
 - Frontend only (browser, no Tauri): `pnpm dev`
+- Slow recognition down to test backpressure: in **debug builds only**,
+  `DRAW_EX_FAKE_RECOGNIZER_DELAY_MS` sets the stand-in recognizer's delay per frame
+  (default 0), e.g. `DRAW_EX_FAKE_RECOGNIZER_DELAY_MS=500 pnpm tauri dev`. Release builds
+  ignore it. In dev builds each camera view shows a capture readout (preview fps, frames
+  sent and skipped, in flight, round trip).
 - Checks (CI runs all of them, on macOS and Windows):
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
