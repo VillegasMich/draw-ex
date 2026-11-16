@@ -835,15 +835,20 @@ dependencies = [
  "card-db",
  "domain",
  "draw-core",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "specta",
  "specta-typescript",
  "tauri",
  "tauri-build",
  "tauri-specta",
+ "tempfile",
  "thiserror 2.0.21",
+ "tokio",
  "tracker",
+ "wiremock",
 ]
 
 [[package]]

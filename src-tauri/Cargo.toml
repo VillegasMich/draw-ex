@@ -19,16 +19,23 @@ card-db = { workspace = true, features = ["specta"] }
 domain = { workspace = true, features = ["specta"] }
 # Recognition (ADR-0001). Only this crate may depend on draw-core (ADR-0002).
 draw-core = { git = "https://github.com/VillegasMich/draw2", tag = "draw-core-v0.0.1", features = ["fake"] }
+# Model downloads (D4). rustls (aws-lc-rs) for TLS, as in card-db: no OpenSSL.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10.9"
 specta.workspace = true
 tauri = { version = "2.12.5", features = [] }
 # tauri-specta and specta-typescript are rcs: pin them exactly, with specta.
 tauri-specta = { version = "=2.0.0-rc.29", features = ["derive", "typescript"] }
 thiserror.workspace = true
+tokio = { version = "1.54.1", features = ["fs", "io-util", "sync", "time"] }
 tracker = { workspace = true, features = ["specta"] }
 
 [dev-dependencies]
 # Writes src/lib/bindings.ts from a test.
 specta-typescript = "=0.0.15"
 tauri = { version = "2.12.5", features = ["test"] }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6.5"
