@@ -19,6 +19,8 @@
   } from './camera';
   import { cameraSlots, Toolbar } from './layout';
   import { commands, type CameraId, type IpcError } from './lib/bindings';
+  import { CameraOverlay, DemoStandIn, DemoToggle, liveView } from './overlay';
+  import { connectPanels, DuelLog, panels, PlayerPanel } from './panels';
 
   let cameras = $state.raw<CameraDevice[]>([]);
   let connecting = $state(true);
@@ -114,6 +116,7 @@
       return;
     }
     pendingSetup = null;
+    liveView.setup = setup;
     const request = ++setupRequest;
     commands.setCameraSetup(setup).then(
       () => {
@@ -129,6 +132,8 @@
     );
   });
 
+  onMount(connectPanels);
+
   onMount(() => {
     void connect();
     return onCamerasChanged(() => void onDevicesChanged());
@@ -138,7 +143,7 @@
 <div class="layout">
   <aside class="panel" aria-labelledby="player-a-title">
     <h2 id="player-a-title" class="title">Player A</h2>
-    <p class="empty">No cards yet</p>
+    <PlayerPanel panel={panels.state.a} onfeature={(track) => panels.feature('a', track)} />
   </aside>
 
   <main class="camera" aria-labelledby="camera-title">
@@ -152,7 +157,11 @@
             cameraId={slot.cameraId}
             label={slot.label}
             onvideosize={(size) => (videoSizes[slot.cameraId] = size)}
-          />
+          >
+            {#snippet overlay(video)}
+              <CameraOverlay camera={slot.cameraId} {video} />
+            {/snippet}
+          </CameraView>
         {/each}
       </div>
     {:else}
@@ -169,13 +178,16 @@
         {:else}
           <p class="empty">No camera setup yet. Choose one with Setup.</p>
         {/if}
+        <DemoStandIn />
       </div>
     {/if}
+    <DuelLog entries={panels.log} originMs={panels.originMs} />
+    <DemoToggle cameras={slots.map((slot) => slot.cameraId)} />
   </main>
 
   <aside class="panel" aria-labelledby="player-b-title">
     <h2 id="player-b-title" class="title">Player B</h2>
-    <p class="empty">No cards yet</p>
+    <PlayerPanel panel={panels.state.b} onfeature={(track) => panels.feature('b', track)} />
   </aside>
 </div>
 
@@ -226,6 +238,7 @@
   }
 
   .placeholder {
+    position: relative;
     display: grid;
     flex: 1;
     place-items: center;

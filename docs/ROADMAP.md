@@ -372,7 +372,7 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   touch `src/App.svelte` only to mount its components into the existing regions. D1
   owns that file, so D3 rebases on D1 if D1 merges first.
 - **Scope**:
-  - Canvas boxes mapped through the video's letterbox.
+  - SVG boxes mapped through the video's letterbox.
   - A draggable split line.
   - Per-player panels: art, name, type, ATK/DEF, level/link, effect text.
   - A duel-log timeline.
@@ -392,8 +392,8 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
     events with time and player.
   - Interface text is English. Card names follow the language setting.
 - **Done when**:
-  - [ ] Boxes line up with the cards at any window size.
-  - [ ] Panels update on fake `Confirmed` and `Lost` events.
+  - [x] Boxes line up with the cards at any window size.
+  - [x] Panels update on fake `Confirmed` and `Lost` events.
 
 #### D4: First run, settings, cache screens
 - **Branch**: `feat/settings-models`. **Owns**: `src/settings/`, `src-tauri/src/models/`,

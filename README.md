@@ -72,7 +72,7 @@ the table, with their artwork, type, stats and effect text.
 │  │ getUserMedia ─► <video>      │  frame     │ draw-core  (dep,    │ │
 │  │   (display, native fps)      │──(RGBA)──► │  from draw2 fork)   │ │
 │  │                              │  ~5–10 fps │  YOLO ─► warp ─► ViT│ │
-│  │ overlay canvas (boxes)       │◄─────────  │ tracker + voting    │ │
+│  │ overlay SVG (boxes)          │◄─────────  │ tracker + voting    │ │
 │  │ side panels (per player)     │ detections │ side assignment     │ │
 │  │ duel log / settings          │  + events  ├─────────────────────┤ │
 │  │                              │            │ card-db             │ │
@@ -98,8 +98,8 @@ and the macOS `.dmg` directly.
 - **Backpressure**: at most one frame per camera is in flight. While Rust is busy, frames
   are skipped rather than queued, so results never fall behind the live feed.
 - Rust replies with detections in source-frame pixel coordinates plus the frame's
-  timestamp. The frontend draws boxes on a canvas over the video, and the panels update
-  from track events.
+  timestamp. The frontend draws boxes as an SVG overlay on the video, and the panels
+  update from track events.
 - _Fallback if webview capture proves unreliable_: capture in Rust (`nokhwa`) and push
   preview frames to the webview. This is more work and costs more bandwidth, so it is not
   the default.

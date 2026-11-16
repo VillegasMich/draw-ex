@@ -1,0 +1,8 @@
+/* Player colors for the overlay, split line and duel log. Kept out of src/app.css: the
+   overlay owns them. */
+:root {
+  --player-a-color: #4fa3ff;
+  --player-b-color: #ff7a59;
+  --overlay-neutral-color: rgb(230 232 238 / 55%);
+  --overlay-label-halo: rgb(15 17 21 / 85%);
+}
