@@ -18,6 +18,9 @@ mod settings;
 pub fn run() -> tauri::Result<()> {
     let app =
         ipc::register_commands(tauri::Builder::default()).build(tauri::generate_context!())?;
+    let data_dir = tauri::Manager::path(&app).app_data_dir()?;
+    tauri::Manager::manage(&app, settings::SettingsStore::open(&data_dir));
+    tauri::Manager::manage(&app, models::ModelStore::pinned(&data_dir));
     ipc::mount_events(&app);
     app.run(|_, _| {});
     Ok(())

@@ -1,10 +1,10 @@
-//! The typed commands. Each is a stub that returns canned data and never calls the
-//! `tracker` or `card-db` crates; the Phase 1 tickets replace the bodies.
+//! The typed commands. Most are stubs that return canned data and never call the
+//! `tracker` or `card-db` crates; the Phase 1 tickets replace the bodies. The settings
+//! and model commands (D4) are real.
 
 use card_db::{Card, DeckId, Language, SyncProgress, SyncStage};
 use domain::Passcode;
-use draw_core::{ModelManifest, ModelVariant};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Runtime, State};
 use tauri_specta::Event;
 use tracker::{CameraSetup, SessionId, SessionInfo};
 
@@ -14,6 +14,8 @@ use super::types::{
     CacheKind, CacheStats, DeckSummary, IpcError, IpcErrorKind, ModelStatus, ModelVariantDto,
     SessionSummary, Settings,
 };
+use crate::models::ModelStore;
+use crate::settings::SettingsStore;
 
 fn emit_failed(error: &tauri::Error) -> IpcError {
     IpcError::new(
@@ -110,57 +112,71 @@ pub fn select_deck(id: Option<DeckId>) -> Result<(), IpcError> {
 ///
 /// # Errors
 ///
-/// Never fails in the stub, which returns the defaults.
+/// Never fails: unusable stored settings were replaced by the defaults at startup.
 #[tauri::command]
 #[specta::specta]
-pub fn get_settings() -> Result<Settings, IpcError> {
-    Ok(Settings::default())
+pub fn get_settings(store: State<'_, SettingsStore>) -> Result<Settings, IpcError> {
+    Ok(store.get())
 }
 
 /// Replaces the settings and returns them as stored.
 ///
 /// # Errors
 ///
-/// Never fails in the stub, which stores nothing and echoes `settings`.
+/// `invalidArgument` when a value is out of range, `io` when `settings.json` cannot be
+/// written. Either way the previous settings stay in effect.
 #[tauri::command]
 #[specta::specta]
-pub fn update_settings(settings: Settings) -> Result<Settings, IpcError> {
-    Ok(settings)
+pub fn update_settings(
+    store: State<'_, SettingsStore>,
+    settings: Settings,
+) -> Result<Settings, IpcError> {
+    Ok(store.update(settings)?)
 }
 
 /// Reports which model variants are installed and which is in use.
 ///
 /// # Errors
 ///
-/// Never fails in the stub.
+/// Never fails.
 #[tauri::command]
 #[specta::specta]
-pub fn model_status() -> Result<ModelStatus, IpcError> {
-    Ok(canned::model_status())
+pub fn model_status(
+    models: State<'_, ModelStore>,
+    settings: State<'_, SettingsStore>,
+) -> Result<ModelStatus, IpcError> {
+    Ok(models.status(settings.get().model_variant.into()))
 }
 
 /// Downloads the files `variant` needs, emitting `model-download-progress` as it goes.
+/// Files already present with the right SHA-256 are skipped, and a partial download is
+/// resumed.
 ///
 /// # Errors
 ///
-/// In the stub, only if an event cannot be emitted.
+/// `notReady` while another download runs, `network` when a request fails or a file
+/// does not match its checksum after a retry, `io` when the files cannot be written.
 #[tauri::command]
 #[specta::specta]
-pub fn download_models<R: Runtime>(
+pub async fn download_models<R: Runtime>(
     app: AppHandle<R>,
+    models: State<'_, ModelStore>,
     variant: ModelVariantDto,
 ) -> Result<(), IpcError> {
-    // The stub reports each of the variant's manifest files as fully downloaded.
-    for file in ModelManifest::PINNED.files(ModelVariant::from(variant)) {
-        ModelDownloadProgress {
-            variant,
-            file: file.path.into(),
-            bytes_done: file.size,
-            bytes_total: file.size,
-        }
-        .emit(&app)
-        .map_err(|e| emit_failed(&e))?;
-    }
+    models
+        .download(variant.into(), |progress| {
+            let event = ModelDownloadProgress {
+                variant,
+                file: progress.file.into(),
+                bytes_done: progress.bytes_done,
+                bytes_total: progress.bytes_total,
+            };
+            // A missed progress event must not abort the download.
+            if let Err(error) = event.emit(&app) {
+                eprintln!("warning: {}", emit_failed(&error).message);
+            }
+        })
+        .await?;
     Ok(())
 }
 

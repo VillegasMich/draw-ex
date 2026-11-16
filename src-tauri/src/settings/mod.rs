@@ -6,7 +6,7 @@ use std::sync::Mutex;
 
 use thiserror::Error;
 
-use crate::ipc::types::Settings;
+use crate::ipc::types::{IpcError, IpcErrorKind, Settings};
 
 /// The range [`Settings::inference_fps`] must fall in, in frames per second.
 pub const INFERENCE_FPS_RANGE: std::ops::RangeInclusive<u8> = 1..=30;
@@ -22,6 +22,16 @@ pub enum SettingsError {
     /// Writing `settings.json` failed. The previous file is left as it was.
     #[error("the settings could not be saved: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl From<SettingsError> for IpcError {
+    fn from(error: SettingsError) -> Self {
+        let kind = match error {
+            SettingsError::Invalid(_) => IpcErrorKind::InvalidArgument,
+            SettingsError::Io(_) => IpcErrorKind::Io,
+        };
+        Self::new(kind, error.to_string())
+    }
 }
 
 /// The settings file, `settings.json` in the app data directory, and the settings it

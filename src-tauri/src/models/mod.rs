@@ -22,7 +22,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// The least time between two progress reports for one file.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
-use crate::ipc::types::{ModelStatus, VariantStatus};
+use crate::ipc::types::{IpcError, IpcErrorKind, ModelStatus, VariantStatus};
 
 /// One model file to download: where it goes, where it comes from and how to verify it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +146,12 @@ impl ModelStore {
             catalog,
             downloading: Mutex::new(()),
         }
+    }
+
+    /// The store of draw-core's pinned model files, in `<app_data_dir>/models/`.
+    #[must_use]
+    pub fn pinned(app_data_dir: &Path) -> Self {
+        Self::new(&app_data_dir.join("models"), Catalog::pinned())
     }
 
     /// Which variants are installed, with `current` as the one in use.
@@ -387,6 +393,20 @@ fn hex(hasher: Sha256) -> String {
             let _ = write!(out, "{byte:02x}");
             out
         })
+}
+
+impl From<ModelError> for IpcError {
+    fn from(error: ModelError) -> Self {
+        let kind = match error {
+            ModelError::Busy => IpcErrorKind::NotReady,
+            ModelError::Network { .. }
+            | ModelError::Status { .. }
+            | ModelError::Checksum { .. }
+            | ModelError::Client(_) => IpcErrorKind::Network,
+            ModelError::Io(_) => IpcErrorKind::Io,
+        };
+        Self::new(kind, error.to_string())
+    }
 }
 
 /// The length of the file at `path`, or `None` if there is no such file.

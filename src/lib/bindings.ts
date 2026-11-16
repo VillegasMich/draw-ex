@@ -69,7 +69,7 @@ export const commands = {
 	 * 
 	 *  # Errors
 	 * 
-	 *  Never fails in the stub, which returns the defaults.
+	 *  Never fails: unusable stored settings were replaced by the defaults at startup.
 	 */
 	getSettings: (options?: InvokeOptions) => __TAURI_INVOKE<Settings>("get_settings", undefined, options),
 	/**
@@ -77,7 +77,8 @@ export const commands = {
 	 * 
 	 *  # Errors
 	 * 
-	 *  Never fails in the stub, which stores nothing and echoes `settings`.
+	 *  `invalidArgument` when a value is out of range, `io` when `settings.json` cannot be
+	 *  written. Either way the previous settings stay in effect.
 	 */
 	updateSettings: (settings: Settings, options?: InvokeOptions) => __TAURI_INVOKE<Settings>("update_settings", { settings }, options),
 	/**
@@ -85,15 +86,18 @@ export const commands = {
 	 * 
 	 *  # Errors
 	 * 
-	 *  Never fails in the stub.
+	 *  Never fails.
 	 */
 	modelStatus: (options?: InvokeOptions) => __TAURI_INVOKE<ModelStatus>("model_status", undefined, options),
 	/**
 	 *  Downloads the files `variant` needs, emitting `model-download-progress` as it goes.
+	 *  Files already present with the right SHA-256 are skipped, and a partial download is
+	 *  resumed.
 	 * 
 	 *  # Errors
 	 * 
-	 *  In the stub, only if an event cannot be emitted.
+	 *  `notReady` while another download runs, `network` when a request fails or a file
+	 *  does not match its checksum after a retry, `io` when the files cannot be written.
 	 */
 	downloadModels: (variant: ModelVariantDto, options?: InvokeOptions) => __TAURI_INVOKE<null>("download_models", { variant }, options),
 	/**
