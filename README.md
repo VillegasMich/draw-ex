@@ -185,8 +185,8 @@ The ONNX files are hosted on Hugging Face at
 |---|---|---|
 | `ygo_yolo.onnx` | 39 MB | Detector (always needed) |
 | `vit_fp32.onnx` | 386 MB | Classifier, full precision |
-| `vit_fp16.onnx` | 193 MB | Classifier, half precision |
-| `vit_int8.onnx` | 98 MB | Classifier, INT8 (CPU-friendly) |
+| `vit_fp16.onnx` | 193 MB | Classifier, half precision. Not recommended: labels mismatch (see below) |
+| `vit_int8.onnx` | 98 MB | Classifier, INT8 (CPU-friendly). The default |
 | `vit_yugiscan_int8.onnx` | 98 MB | Alternative classifier; labels in `card_labels_yugiscan.json` |
 | `cardnames_onnx.json` | 1.8 MB | ViT output index → `{EN, FR, JA, card_id, label}` |
 
@@ -194,8 +194,20 @@ The ONNX files are hosted on Hugging Face at
   data directory. A progress UI shows the download.
 - Which files to fetch comes from **draw-core's model manifest**. Downloads are pinned to
   a specific Hugging Face **commit**, not `main`, and checked against a SHA-256.
-- The default ViT variant will be chosen from benchmarks on real hardware. The user can
-  switch variants in settings.
+- A download is written to `<file>.part`, **resumed** with an HTTP `Range` request after
+  an interruption, verified, then renamed into place. A checksum mismatch discards it and
+  downloads once more from zero. A file already in place is hashed again before a
+  download, so a corrupted one is fetched again. The status shown in the UI only checks
+  file sizes, because hashing hundreds of megabytes on every check is too slow.
+- Settings live in `settings.json`, written atomically (temporary file + rename). A file
+  that cannot be parsed or fails validation is moved to `settings.json.bak` and the
+  defaults are used.
+- The default ViT variant is **Int8**: detector, classifier and labels come to about
+  139 MB (132 MiB), which the first-run banner offers to download. The pinned
+  `vit_fp16.onnx` outputs 13,820 classes while `cardnames_onnx.json` lists 13,968
+  labels, so it reports wrong cards. It stays selectable in Settings, marked "not
+  recommended", and draw-core 0.1.0 rejects a mismatched labels file. Benchmarks on real
+  hardware (I2) may still change the default. The user can switch variants in settings.
 
 ### Card data and cache (`card-db`)
 
@@ -241,7 +253,8 @@ Design:
 All paths are under the OS app-data directory resolved by Tauri:
 
 ```
-models/      ONNX files + label JSON + manifest (revision, sha256)
+models/      onnx/<file> as draw-core's manifest names it (ONNX + label JSON);
+             <file>.part while a download is in progress
 cards.db     SQLite: card data, sync metadata
 images/      full/ small/ cropped/  <passcode>.jpg (+ <passcode>.missing markers)
 decks/       <id>/<name>.ydk, one folder per imported deck list
@@ -292,7 +305,8 @@ and done-criteria. In short:
 
 ## Open questions
 
-- **Default ViT variant and inference rate per platform**: decided by benchmarks.
+- **Default ViT variant and inference rate per platform**: decided by benchmarks. Int8
+  is the default until then.
 - **Duel log sharing**: whether to also export a human-readable summary.
 - **Code signing**: only needed to distribute installers to other people (see
   [Distribution and signing](#distribution-and-signing)). Whether to pay for it is

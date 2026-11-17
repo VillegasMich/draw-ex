@@ -1,7 +1,9 @@
 //! Every command through Tauri's mock runtime, as the webview would call it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+
+use draw_core::ModelVariant;
 
 use serde_json::{Value, json};
 use tauri::http::{HeaderMap, HeaderValue};
@@ -10,27 +12,47 @@ use tauri::test::{
     INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder, mock_context, noop_assets,
 };
 use tauri::webview::InvokeRequest;
-use tauri::{App, Listener, WebviewWindow, WebviewWindowBuilder};
+use tauri::{App, Listener, Manager, WebviewWindow, WebviewWindowBuilder};
+use tempfile::TempDir;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::frames::{
     CAMERA_ID_HEADER, FRAME_HEIGHT_HEADER, FRAME_TIME_MS_HEADER, FRAME_WIDTH_HEADER,
 };
+use crate::models::{Catalog, ModelFile, ModelStore};
+use crate::settings::SettingsStore;
 
 struct TestApp {
     app: App<MockRuntime>,
     webview: WebviewWindow<MockRuntime>,
+    /// Stands in for the app data directory.
+    data_dir: TempDir,
 }
 
 impl TestApp {
+    /// An app whose model store knows draw-core's pinned files (never downloaded here).
     fn new() -> Self {
+        Self::with_models(ModelStore::pinned)
+    }
+
+    /// An app whose model store is built by `models` from the app data directory.
+    fn with_models(models: impl FnOnce(&Path) -> ModelStore) -> Self {
+        let data_dir = TempDir::new().expect("a temporary app data directory");
         let app = super::register_commands(mock_builder())
             .build(mock_context(noop_assets()))
             .expect("the mock app builds");
         super::mount_events(&app);
+        app.manage(SettingsStore::open(data_dir.path()));
+        app.manage(models(data_dir.path()));
         let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .expect("the mock webview builds");
-        Self { app, webview }
+        Self {
+            app,
+            webview,
+            data_dir,
+        }
     }
 
     fn invoke_raw(&self, cmd: &str, body: InvokeBody, headers: HeaderMap) -> Result<Value, Value> {
@@ -181,13 +203,13 @@ fn deck_commands_return_the_canned_deck() {
 }
 
 #[test]
-fn get_settings_returns_the_defaults_and_update_settings_echoes() {
+fn update_settings_saves_and_get_settings_returns_them_after_a_restart() {
     let app = TestApp::new();
     assert_eq!(
         app.invoke("get_settings", json!({})),
         Ok(json!({
             "language": "en",
-            "modelVariant": "fp16",
+            "modelVariant": "int8",
             "inferenceFps": 6,
             "selectedDeck": null,
             "imageCacheMb": 1024,
@@ -203,17 +225,43 @@ fn get_settings_returns_the_defaults_and_update_settings_echoes() {
     });
     assert_eq!(
         app.invoke("update_settings", json!({ "settings": changed })),
-        Ok(changed)
+        Ok(changed.clone())
     );
+    assert_eq!(app.invoke("get_settings", json!({})), Ok(changed.clone()));
+
+    // A new store over the same directory, as after a restart.
+    let reopened = SettingsStore::open(app.data_dir.path());
+    assert_eq!(serde_json::to_value(reopened.get()).unwrap(), changed);
 }
 
 #[test]
-fn model_status_lists_every_variant_with_fp16_installed() {
-    let status = TestApp::new()
+fn update_settings_rejects_out_of_range_values_and_keeps_the_old_ones() {
+    let app = TestApp::new();
+    let defaults = app.invoke("get_settings", json!({})).expect("get_settings");
+    let mut bad = defaults.clone();
+    bad["inferenceFps"] = json!(0);
+
+    let error = app
+        .invoke("update_settings", json!({ "settings": bad }))
+        .expect_err("fps 0 is rejected");
+
+    assert_eq!(error["kind"], "invalidArgument");
+    assert_eq!(app.invoke("get_settings", json!({})), Ok(defaults));
+}
+
+#[test]
+fn model_status_lists_every_variant_with_none_installed_on_a_clean_data_dir() {
+    let app = TestApp::new();
+    let mut settings = app.invoke("get_settings", json!({})).expect("get_settings");
+    settings["modelVariant"] = json!("int8");
+    app.invoke("update_settings", json!({ "settings": settings }))
+        .expect("update_settings");
+
+    let status = app
         .invoke("model_status", json!({}))
         .expect("model_status succeeds");
 
-    assert_eq!(status["current"], "fp16");
+    assert_eq!(status["current"], "int8");
     let variants = status["variants"].as_array().expect("variants is an array");
     let names: Vec<&str> = variants
         .iter()
@@ -221,19 +269,44 @@ fn model_status_lists_every_variant_with_fp16_installed() {
         .collect();
     assert_eq!(names, ["fp32", "fp16", "int8", "yugiscanInt8"]);
     for variant in variants {
-        let installed = variant["variant"] == "fp16";
-        assert_eq!(variant["installed"], installed);
-        let total = variant["bytesTotal"]
-            .as_u64()
-            .expect("bytesTotal is a number");
-        assert!(total > 0, "{variant}");
-        assert_eq!(variant["bytesOnDisk"], if installed { total } else { 0 });
+        assert_eq!(variant["installed"], false);
+        assert_eq!(variant["bytesOnDisk"], 0);
     }
+    // Detector + classifier + labels, from draw-core's manifest.
+    assert_eq!(
+        variants[2]["bytesTotal"],
+        39_016_336 + 97_771_550 + 1_768_550
+    );
+}
+
+/// A local server holding one fake Int8 file, and a catalog that points at it.
+fn fake_model_server(runtime: &tokio::runtime::Runtime, status: u16) -> (MockServer, Catalog) {
+    const WEIGHTS: &[u8] = b"fake int8 classifier weights";
+    let server = runtime.block_on(MockServer::start());
+    runtime.block_on(
+        Mock::given(method("GET"))
+            .and(path("/vit_int8.onnx"))
+            .respond_with(ResponseTemplate::new(status).set_body_bytes(WEIGHTS))
+            .mount(&server),
+    );
+    let catalog = Catalog::new([(
+        ModelVariant::Int8,
+        vec![ModelFile {
+            path: "onnx/vit_int8.onnx".into(),
+            // SHA-256 of WEIGHTS.
+            sha256: "29fcb288b8231164302b36823afc746ffc29259ad3d183b6813a1e84a0d267db".into(),
+            size: WEIGHTS.len() as u64,
+            url: format!("{}/vit_int8.onnx", server.uri()),
+        }],
+    )]);
+    (server, catalog)
 }
 
 #[test]
-fn download_models_emits_three_progress_events_for_the_variants_files() {
-    let app = TestApp::new();
+fn download_models_installs_the_variant_and_emits_progress_up_to_the_file_size() {
+    let runtime = tokio::runtime::Runtime::new().expect("a runtime for the mock server");
+    let (_server, catalog) = fake_model_server(&runtime, 200);
+    let app = TestApp::with_models(|dir| ModelStore::new(&dir.join("models"), catalog));
     let events = app.record("model-download-progress");
 
     assert_eq!(
@@ -242,38 +315,30 @@ fn download_models_emits_three_progress_events_for_the_variants_files() {
     );
 
     let events = events.lock().expect("not poisoned");
-    let files: Vec<&str> = events
-        .iter()
-        .map(|e| e["file"].as_str().expect("file is a string"))
-        .collect();
     assert_eq!(
-        files,
-        [
-            "onnx/ygo_yolo.onnx",
-            "onnx/vit_int8.onnx",
-            "onnx/cardnames_onnx.json"
-        ]
+        events.last(),
+        Some(&json!({
+            "variant": "int8",
+            "file": "onnx/vit_int8.onnx",
+            "bytesDone": 28,
+            "bytesTotal": 28,
+        }))
     );
-    for event in events.iter() {
-        assert_eq!(event["variant"], "int8");
-        assert_eq!(event["bytesDone"], event["bytesTotal"]);
-    }
-    assert_eq!(events[1]["bytesTotal"], 97_771_550);
+    let status = app.invoke("model_status", json!({})).expect("model_status");
+    assert_eq!(status["variants"][2]["installed"], true);
 }
 
 #[test]
-fn download_models_emits_three_progress_events_for_every_variant() {
-    for variant in ["fp32", "fp16", "int8", "yugiscanInt8"] {
-        let app = TestApp::new();
-        let events = app.record("model-download-progress");
+fn download_models_rejects_with_network_when_the_server_fails() {
+    let runtime = tokio::runtime::Runtime::new().expect("a runtime for the mock server");
+    let (_server, catalog) = fake_model_server(&runtime, 503);
+    let app = TestApp::with_models(|dir| ModelStore::new(&dir.join("models"), catalog));
 
-        assert_eq!(
-            app.invoke("download_models", json!({ "variant": variant })),
-            Ok(Value::Null)
-        );
+    let error = app
+        .invoke("download_models", json!({ "variant": "int8" }))
+        .expect_err("the download fails");
 
-        assert_eq!(events.lock().expect("not poisoned").len(), 3, "{variant}");
-    }
+    assert_eq!(error["kind"], "network", "{error}");
 }
 
 #[test]

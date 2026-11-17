@@ -112,6 +112,35 @@ describe('FrameCapture', () => {
     stop();
   });
 
+  it('changes a running camera to a new rate without restarting it', async () => {
+    submit.mockResolvedValue([detection(10)]);
+    const capture = new FrameCapture();
+    const stop = capture.start('cam-1', source(), 6);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(capture.stats('cam-1').sent).toBe(6);
+
+    capture.setFps('cam-1', 12);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(capture.stats('cam-1').sent).toBe(18);
+    // Still the same run: its detections were never cleared.
+    expect(liveView.detections('cam-1')).toEqual([detection(10)]);
+
+    stop();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(capture.stats('cam-1').sent).toBe(18);
+  });
+
+  it('ignores a new rate for a camera that is not capturing', async () => {
+    submit.mockResolvedValue([]);
+    const capture = new FrameCapture();
+
+    capture.setFps('cam-1', 12);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(capture.stats('cam-1').sent).toBe(0);
+  });
+
   it('falls back to the default rate for a rate that makes no sense', async () => {
     submit.mockResolvedValue([]);
     const capture = new FrameCapture();

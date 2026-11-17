@@ -71,9 +71,10 @@ pub enum RecognitionDto {
 pub enum ModelVariantDto {
     /// Full-precision ViT classifier (largest, most accurate).
     Fp32,
-    /// Half-precision ViT classifier. The provisional default, as in draw-core.
+    /// Half-precision ViT classifier. Not recommended: the pinned file has 13,820 outputs
+    /// but its labels file lists 13,968 cards, so it reports wrong cards.
     Fp16,
-    /// 8-bit integer ViT classifier.
+    /// 8-bit integer ViT classifier. The default.
     Int8,
     /// 8-bit integer Yugiscan ViT classifier.
     YugiscanInt8,
@@ -85,8 +86,7 @@ pub enum ModelVariantDto {
 pub struct Settings {
     /// The language card data is shown in. Default English.
     pub language: Language,
-    /// The classifier build recognition uses. Default [`ModelVariantDto::Fp16`]
-    /// (provisional).
+    /// The classifier build recognition uses. Default [`ModelVariantDto::Int8`].
     pub model_variant: ModelVariantDto,
     /// How many frames per second, per camera, are sent for recognition. Default 6.
     pub inference_fps: u8,
@@ -100,7 +100,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             language: Language::En,
-            model_variant: ModelVariantDto::Fp16,
+            model_variant: ModelVariantDto::Int8,
             inference_fps: 6,
             selected_deck: None,
             image_cache_mb: 1024,
@@ -293,7 +293,7 @@ mod tests {
     fn settings_default_and_round_trip_with_camel_case_keys() {
         let expected = json!({
             "language": "en",
-            "modelVariant": "fp16",
+            "modelVariant": "int8",
             "inferenceFps": 6,
             "selectedDeck": null,
             "imageCacheMb": 1024,

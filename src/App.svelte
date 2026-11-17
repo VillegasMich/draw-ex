@@ -22,6 +22,7 @@
   import { commands, type CameraId, type IpcError } from './lib/bindings';
   import { CameraOverlay, DemoStandIn, DemoToggle, liveView } from './overlay';
   import { connectPanels, DuelLog, panels, PlayerPanel } from './panels';
+  import { appSettings, ModelsBanner, ModelsState, SettingsModal } from './settings';
 
   let cameras = $state.raw<CameraDevice[]>([]);
   let connecting = $state(true);
@@ -35,6 +36,8 @@
   let videoSizes = $state<Record<CameraId, VideoSize>>({});
   let setupOpen = $state(false);
   let setupProblem = $state<string | null>(null);
+  let settingsOpen = $state(false);
+  const models = new ModelsState();
 
   let slots = $derived(selection ? cameraSlots(selection) : []);
   let summary = $derived(
@@ -134,6 +137,8 @@
   });
 
   onMount(connectPanels);
+  onMount(() => models.connect());
+  onMount(() => void appSettings.load());
 
   onMount(() => {
     void connect();
@@ -149,7 +154,13 @@
 
   <main class="camera" aria-labelledby="camera-title">
     <h2 id="camera-title" class="title">Camera</h2>
-    <Toolbar {summary} problem={setupProblem} onsetup={() => (setupOpen = true)} />
+    <Toolbar
+      {summary}
+      problem={setupProblem}
+      onsetup={() => (setupOpen = true)}
+      onsettings={() => (settingsOpen = true)}
+    />
+    <ModelsBanner {models} />
 
     {#if slots.length > 0}
       <div class="stack">
@@ -199,6 +210,13 @@
   current={selection}
   onsave={save}
   onclose={() => (setupOpen = false)}
+/>
+
+<SettingsModal
+  open={settingsOpen}
+  settings={appSettings}
+  {models}
+  onclose={() => (settingsOpen = false)}
 />
 
 <style>

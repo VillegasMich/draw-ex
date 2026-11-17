@@ -7,9 +7,7 @@ use domain::Passcode;
 use draw_core::{Candidate, Detection, ModelManifest, ModelVariant, Point, Quad, Recognition};
 use tracker::SessionId;
 
-use super::types::{
-    CacheStats, DeckSummary, ModelStatus, ModelVariantDto, SessionSummary, VariantStatus,
-};
+use super::types::{CacheStats, DeckSummary, SessionSummary};
 
 pub const MONSTER_REBORN: Passcode = Passcode(83_764_719);
 pub const ASH_BLOSSOM: Passcode = Passcode(14_558_127);
@@ -20,8 +18,8 @@ pub const SESSION_ID: &str = "canned-session";
 pub const SESSION_STARTED_AT_MS: f64 = 1_763_135_520_000.0;
 pub const DECK_ID: &str = "canned-deck";
 
-/// The variant the stubs report as installed and in use.
-pub const CURRENT_VARIANT: ModelVariant = ModelVariant::Fp16;
+/// The variant whose files the canned cache stats count as downloaded.
+pub const CURRENT_VARIANT: ModelVariant = ModelVariant::Int8;
 
 /// A draw-core candidate, as the fake recognizer returns it.
 fn candidate(passcode: Passcode, score: f32) -> Candidate {
@@ -160,26 +158,6 @@ fn variant_bytes(variant: ModelVariant) -> u64 {
         .iter()
         .map(|file| file.size)
         .sum()
-}
-
-/// Every variant from draw-core's manifest, with only [`CURRENT_VARIANT`] installed.
-pub fn model_status() -> ModelStatus {
-    ModelStatus {
-        current: CURRENT_VARIANT.into(),
-        variants: ModelVariant::ALL
-            .into_iter()
-            .map(|variant| {
-                let bytes_total = variant_bytes(variant);
-                let installed = variant == CURRENT_VARIANT;
-                VariantStatus {
-                    variant: ModelVariantDto::from(variant),
-                    installed,
-                    bytes_on_disk: if installed { bytes_total } else { 0 },
-                    bytes_total,
-                }
-            })
-            .collect(),
-    }
 }
 
 pub fn cache_stats() -> CacheStats {
