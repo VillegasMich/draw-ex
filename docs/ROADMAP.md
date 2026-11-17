@@ -234,14 +234,21 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
     - deck filtering, where `Some(empty set)` behaves like `None`.
   - Uses the shared `runtime::environment()` from A1. It never calls `ort::init()`.
   - Reference results: a Python script makes the crops with OpenCV and runs the **same
-    ONNX ViT** through onnxruntime. Rust must match top-1 exactly and the scores within
-    1e-3, and `sample_photo` must give Monster Reborn.
-  - CI downloads the **int8** ViT (98 MB) plus its labels from the manifest, verifies
-    them and caches them, like the detector.
+    ONNX ViT** through onnxruntime.
+    - The strict classifier check runs on **fp32**: top-1 equal on every crop, scores
+      within **5e-3**.
+    - On **int8**, top-1 must be equal wherever onnxruntime's top-1 is ≥ 0.05. Rust's
+      and Python's ONNX Runtime builds compute int8 differently, with score gaps up to
+      ~0.2.
+    - `sample_photo` must give Monster Reborn end to end on int8.
+  - CI downloads the detector, the int8 and fp32 ViTs and the labels from the manifest,
+    verifies them and caches them by sha256.
+  - Outputs count as probabilities only when **all** values are in [0, 1]; otherwise
+    softmax. This deviates from `pipeline.js`, which uses `max <= 1`.
   - `serde` + `serde_json` are approved as normal dependencies, for the label files.
 - **Done when**:
-  - [ ] `sample_photo.jpg` with its fixture box yields Monster Reborn `83764719` as top-1.
-  - [ ] The deck filter picks the best in-deck candidate from a top-15.
+  - [x] `sample_photo.jpg` with its fixture box yields Monster Reborn `83764719` as top-1.
+  - [x] The deck filter picks the best in-deck candidate from a top-15.
 
 #### A3: Runtime, manifest, release
 - **Branch**: `feat/draw-core-runtime`. **Depends on**: A1, A2.
@@ -250,9 +257,24 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - Execution provider selection: CoreML, DirectML, CPU fallback.
   - The real manifest, with a pinned HF revision and sha256 for every variant.
   - Wire A1 + A2 into `Recognizer`.
-  - A `bench` example that reports fps per variant on the sample video.
+  - A `bench` example that reports fps per variant.
+- **Decided**:
+  - **Execution providers**: CoreML on macOS and DirectML on Windows, with **automatic
+    CPU fallback** when they fail to start. `RecognizerOptions` gains `force_cpu`
+    (additive).
+  - **Batching**: all of a frame's crops are classified in **one ViT run**.
+  - **Bench**: `cargo run --example bench` over the fixture frames (sample photo + the
+    video frames, repeated) reports fps per variant and execution provider. No video
+    decoder dependency.
+  - **End to end**: `Recognizer` on `sample_photo` gives Monster Reborn; on the video
+    frames, every recognized card matches the reference top-1 for its box; quads come
+    out upright (TL, TR, BR, BL).
+  - **CI** tests on CPU only. A test proves that requesting an unavailable provider
+    falls back cleanly. The CoreML speed-up is measured locally on a Mac.
+  - Benchmarks go in `crates/draw-core/BENCHMARKS.md` (draw2). Tag
+    `draw-core-v0.1.0` after the merge; draw-ex bumps its pin in I1.
 - **Done when**:
-  - [ ] End-to-end recognition works on the sample video.
+  - [ ] End-to-end recognition works on the fixture frames (sample photo + video frames).
   - [ ] Benchmark numbers are recorded in the draw2 docs for at least one Mac.
   - [ ] Tagged `draw-core-v0.1.0`.
 
