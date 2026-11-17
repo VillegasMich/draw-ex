@@ -1,7 +1,8 @@
 //! Owned by D2 (docs/ROADMAP.md): the frame pipeline that runs recognition on submitted frames off the IPC thread.
 
 use std::io;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -45,8 +46,11 @@ struct Job {
 /// rather than letting frames pile up.
 #[derive(Debug)]
 pub struct Pipeline {
-    /// `None` once shut down. Dropping the sender is what tells the worker to stop.
+    /// `None` once shut down. Dropping the sender is what lets the worker's loop end.
     jobs: Mutex<Option<Sender<Job>>>,
+    /// Set by [`Pipeline::shutdown`]: the worker drops queued frames instead of
+    /// recognizing them, so exiting never waits on a backlog.
+    stopping: Arc<AtomicBool>,
     worker: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -58,10 +62,17 @@ impl Pipeline {
     /// Returns the OS error if the thread cannot be started.
     pub fn spawn(mut recognizer: Box<dyn Recognize>) -> io::Result<Self> {
         let (jobs, mut queue) = channel::<Job>(QUEUE_CAPACITY);
+        let stopping = Arc::new(AtomicBool::new(false));
+        let stop = Arc::clone(&stopping);
         let worker = thread::Builder::new()
             .name(WORKER_NAME.into())
             .spawn(move || {
                 while let Some(job) = queue.blocking_recv() {
+                    if stop.load(Ordering::SeqCst) {
+                        // Dropping the job drops its reply sender: its caller gets
+                        // `Stopped`.
+                        continue;
+                    }
                     let frame = FrameRef::new(job.width, job.height, &job.rgba)
                         .expect("a job's pixels are a copy of a valid FrameRef");
                     let reply = recognizer.recognize(frame);
@@ -74,6 +85,7 @@ impl Pipeline {
             })?;
         Ok(Self {
             jobs: Mutex::new(Some(jobs)),
+            stopping,
             worker: Mutex::new(Some(worker)),
         })
     }
@@ -102,11 +114,12 @@ impl Pipeline {
         Ok(result.recv().await.ok_or(PipelineError::Stopped)??)
     }
 
-    /// Stops the worker and waits for its thread to finish the frame it is on and exit.
-    /// Frames submitted afterwards fail with [`PipelineError::Stopped`]. Calling it again
-    /// does nothing.
+    /// Stops the worker and waits for its thread to exit. The frame being recognized is
+    /// finished; queued frames and frames submitted afterwards fail with
+    /// [`PipelineError::Stopped`]. Calling it again does nothing.
     pub fn shutdown(&self) {
-        // Closing the queue ends the worker's loop once it has drained the queued frames.
+        self.stopping.store(true, Ordering::SeqCst);
+        // Closing the queue ends the worker's loop once it has dropped the queued frames.
         drop(lock(&self.jobs).take());
         let worker = lock(&self.worker).take();
         if let Some(worker) = worker
@@ -269,6 +282,15 @@ mod tests {
         }
     }
 
+    /// Fails on every frame.
+    struct Failing;
+
+    impl Recognize for Failing {
+        fn recognize(&mut self, _frame: FrameRef<'_>) -> Result<Vec<Detection>, RecognizeError> {
+            Err(RecognizeError::NotImplemented)
+        }
+    }
+
     fn pixels(width: u32) -> Vec<u8> {
         vec![0; width as usize * 4]
     }
@@ -382,5 +404,59 @@ mod tests {
             Err(PipelineError::Stopped)
         ));
         pipeline.shutdown();
+    }
+
+    #[test]
+    fn a_recognizer_error_reaches_the_caller_and_the_worker_keeps_going() {
+        let pipeline = Pipeline::spawn(Box::new(Failing)).expect("the worker starts");
+        let rgba = pixels(2);
+
+        for _ in 0..2 {
+            assert!(matches!(
+                block_on(pipeline.recognize(frame(&rgba))),
+                Err(PipelineError::Recognize(RecognizeError::NotImplemented))
+            ));
+        }
+    }
+
+    #[test]
+    fn shutdown_finishes_the_current_frame_and_drops_the_queued_ones() {
+        let (recognizer, control) = gate();
+        let pipeline = Pipeline::spawn(recognizer).expect("the worker starts");
+        let frames: Vec<Vec<u8>> = (1..=3).map(pixels).collect();
+        let mut pending: Vec<_> = frames
+            .iter()
+            .map(|rgba| Box::pin(pipeline.recognize(frame(rgba))))
+            .collect();
+        let _ = poll_once(pending[0].as_mut());
+        assert_eq!(control.started.recv(), Ok(1));
+        for future in &mut pending[1..] {
+            let _ = poll_once(future.as_mut());
+        }
+
+        thread::scope(|scope| {
+            let shutdown = scope.spawn(|| pipeline.shutdown());
+            while !pipeline.stopping.load(Ordering::SeqCst) {
+                thread::yield_now();
+            }
+            control.release.send(()).expect("the worker waits");
+            shutdown.join().expect("shutdown returns");
+        });
+
+        let results: Vec<_> = block_on(async {
+            let mut results = Vec::new();
+            for future in pending {
+                results.push(future.await);
+            }
+            results
+        });
+        assert!(results[0].is_ok(), "{results:?}");
+        assert!(
+            results[1..]
+                .iter()
+                .all(|result| matches!(result, Err(PipelineError::Stopped))),
+            "{results:?}"
+        );
+        assert_eq!(control.started.try_iter().count(), 0);
     }
 }
