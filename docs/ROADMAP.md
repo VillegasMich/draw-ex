@@ -502,6 +502,9 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
     - verify the sha256 against the manifest, then rename into place.
   - Dependencies: `reqwest` (rustls), `sha2` and `tokio` in `src-tauri`.
   - Cache and sync commands stay stubs until I1.
+  - Default model variant: **Int8** (user decision after A3). The pinned FP16 classifier
+    outputs 13,820 classes against 13,968 labels in `cardnames_onnx.json`, so it reports
+    wrong cards; it stays selectable, marked "not recommended — labels mismatch".
 - **Done when**:
   - [x] An interrupted download resumes.
   - [x] A corrupted file is detected and fetched again.
@@ -531,7 +534,7 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - Test all three camera setups with real footage.
   - Choose deck lists from the UI.
   - Tune the confirmation thresholds and the inference rate per platform.
-  - Pick the default ViT variant.
+  - Confirm or change the default ViT variant (Int8 since D4).
 - **Done when**:
   - [ ] A recorded test duel per setup recognizes most face-up cards with no wrong
     confirmations.

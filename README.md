@@ -185,8 +185,8 @@ The ONNX files are hosted on Hugging Face at
 |---|---|---|
 | `ygo_yolo.onnx` | 39 MB | Detector (always needed) |
 | `vit_fp32.onnx` | 386 MB | Classifier, full precision |
-| `vit_fp16.onnx` | 193 MB | Classifier, half precision |
-| `vit_int8.onnx` | 98 MB | Classifier, INT8 (CPU-friendly) |
+| `vit_fp16.onnx` | 193 MB | Classifier, half precision. Not recommended: labels mismatch (see below) |
+| `vit_int8.onnx` | 98 MB | Classifier, INT8 (CPU-friendly). The default |
 | `vit_yugiscan_int8.onnx` | 98 MB | Alternative classifier; labels in `card_labels_yugiscan.json` |
 | `cardnames_onnx.json` | 1.8 MB | ViT output index → `{EN, FR, JA, card_id, label}` |
 
@@ -202,8 +202,12 @@ The ONNX files are hosted on Hugging Face at
 - Settings live in `settings.json`, written atomically (temporary file + rename). A file
   that cannot be parsed or fails validation is moved to `settings.json.bak` and the
   defaults are used.
-- The default ViT variant will be chosen from benchmarks on real hardware. The user can
-  switch variants in settings.
+- The default ViT variant is **Int8**: detector, classifier and labels come to about
+  139 MB (132 MiB), which the first-run banner offers to download. The pinned
+  `vit_fp16.onnx` outputs 13,820 classes while `cardnames_onnx.json` lists 13,968
+  labels, so it reports wrong cards. It stays selectable in Settings, marked "not
+  recommended", and draw-core 0.1.0 rejects a mismatched labels file. Benchmarks on real
+  hardware (I2) may still change the default. The user can switch variants in settings.
 
 ### Card data and cache (`card-db`)
 
@@ -301,7 +305,8 @@ and done-criteria. In short:
 
 ## Open questions
 
-- **Default ViT variant and inference rate per platform**: decided by benchmarks.
+- **Default ViT variant and inference rate per platform**: decided by benchmarks. Int8
+  is the default until then.
 - **Duel log sharing**: whether to also export a human-readable summary.
 - **Code signing**: only needed to distribute installers to other people (see
   [Distribution and signing](#distribution-and-signing)). Whether to pay for it is

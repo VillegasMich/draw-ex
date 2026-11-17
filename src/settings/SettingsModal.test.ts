@@ -136,6 +136,17 @@ describe('SettingsModal', () => {
         .closest('label')?.textContent,
     ).toMatch(/234 MB.*Installed/s);
     expect(within(panel).getByRole('button', { name: 'Download (139 MB)' })).toBeTruthy();
+    expect(
+      within(panel)
+        .getByRole('radio', { name: /Integer/ })
+        .closest('label')?.textContent,
+    ).toMatch(/Default/);
+    // Still selectable, but flagged: its labels file does not match the model (A3).
+    expect(
+      within(panel)
+        .getByRole('radio', { name: /Half precision/ })
+        .closest('label')?.textContent,
+    ).toMatch(/Not recommended — labels mismatch/);
 
     await fireEvent.click(within(panel).getByRole('radio', { name: /Half precision/ }));
 

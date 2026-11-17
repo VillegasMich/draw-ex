@@ -11,8 +11,12 @@ export const LANGUAGE_NAMES: Record<Language, string> = {
 
 export const VARIANT_NAMES: Record<ModelVariantDto, { name: string; hint: string }> = {
   fp32: { name: 'Full precision (FP32)', hint: 'Largest and most accurate.' },
-  fp16: { name: 'Half precision (FP16)', hint: 'Nearly as accurate, half the size.' },
-  int8: { name: 'Integer (INT8)', hint: 'Smallest and fastest on a CPU.' },
+  // The pinned FP16 file has 13,820 outputs but its labels list 13,968 cards (A3).
+  fp16: {
+    name: 'Half precision (FP16)',
+    hint: 'Not recommended — labels mismatch: it reports wrong cards.',
+  },
+  int8: { name: 'Integer (INT8)', hint: 'Default. Smallest and fastest on a CPU.' },
   yugiscanInt8: { name: 'Yugiscan (INT8)', hint: 'An alternative classifier build.' },
 };
 

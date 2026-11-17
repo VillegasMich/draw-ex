@@ -358,9 +358,12 @@ export type ModelStatus = {
 export type ModelVariantDto = 
 /**  Full-precision ViT classifier (largest, most accurate). */
 "fp32" | 
-/**  Half-precision ViT classifier. The provisional default, as in draw-core. */
+/**
+ *  Half-precision ViT classifier. Not recommended: the pinned file has 13,820 outputs
+ *  but its labels file lists 13,968 cards, so it reports wrong cards.
+ */
 "fp16" | 
-/**  8-bit integer ViT classifier. */
+/**  8-bit integer ViT classifier. The default. */
 "int8" | 
 /**  8-bit integer Yugiscan ViT classifier. */
 "yugiscanInt8";
@@ -454,10 +457,7 @@ export type SessionSummary = {
 export type Settings = {
 	/**  The language card data is shown in. Default English. */
 	language: Language,
-	/**
-	 *  The classifier build recognition uses. Default [`ModelVariantDto::Fp16`]
-	 *  (provisional).
-	 */
+	/**  The classifier build recognition uses. Default [`ModelVariantDto::Int8`]. */
 	modelVariant: ModelVariantDto,
 	/**  How many frames per second, per camera, are sent for recognition. Default 6. */
 	inferenceFps: number,

@@ -19,7 +19,7 @@ pub const SESSION_STARTED_AT_MS: f64 = 1_763_135_520_000.0;
 pub const DECK_ID: &str = "canned-deck";
 
 /// The variant whose files the canned cache stats count as downloaded.
-pub const CURRENT_VARIANT: ModelVariant = ModelVariant::Fp16;
+pub const CURRENT_VARIANT: ModelVariant = ModelVariant::Int8;
 
 /// A draw-core candidate, as the fake recognizer returns it.
 fn candidate(passcode: Passcode, score: f32) -> Candidate {

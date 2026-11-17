@@ -209,7 +209,7 @@ fn update_settings_saves_and_get_settings_returns_them_after_a_restart() {
         app.invoke("get_settings", json!({})),
         Ok(json!({
             "language": "en",
-            "modelVariant": "fp16",
+            "modelVariant": "int8",
             "inferenceFps": 6,
             "selectedDeck": null,
             "imageCacheMb": 1024,
