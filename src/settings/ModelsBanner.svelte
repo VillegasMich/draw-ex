@@ -5,7 +5,7 @@
 <script lang="ts">
   import DownloadProgress from './DownloadProgress.svelte';
   import { formatBytes } from './format';
-  import type { ModelsState } from './models.svelte';
+  import { bytesToDownload, type ModelsState } from './models.svelte';
 
   interface Props {
     models: ModelsState;
@@ -24,7 +24,7 @@
     {:else}
       <p>Recognition models not installed.</p>
       <button type="button" onclick={() => void models.download(current.variant)}>
-        Download ({formatBytes(current.bytesTotal)})
+        Download ({formatBytes(bytesToDownload(current))})
       </button>
     {/if}
     {#if models.error}

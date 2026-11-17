@@ -86,6 +86,30 @@ describe('SettingsModal', () => {
     expect(commands.updateSettings).toHaveBeenCalledWith({ ...SETTINGS, language: 'fr' });
   });
 
+  it('saves quick successive changes in order, each on top of the last', async () => {
+    let release = () => {};
+    vi.mocked(commands.updateSettings)
+      .mockImplementationOnce(
+        (settings) => new Promise((resolve) => (release = () => resolve(settings))),
+      )
+      .mockImplementation(async (settings) => settings);
+    open();
+    const language = await screen.findByRole('combobox', { name: /Card language/ });
+    const fps = screen.getByRole('spinbutton', { name: /Inference rate/ });
+
+    await fireEvent.change(language, { target: { value: 'fr' } });
+    await fireEvent.change(fps, { target: { value: '12' } });
+    expect(commands.updateSettings).toHaveBeenCalledTimes(1);
+    release();
+
+    await vi.waitFor(() => expect(commands.updateSettings).toHaveBeenCalledTimes(2));
+    expect(commands.updateSettings).toHaveBeenLastCalledWith({
+      ...SETTINGS,
+      language: 'fr',
+      inferenceFps: 12,
+    });
+  });
+
   it('shows why the settings were rejected', async () => {
     vi.mocked(commands.updateSettings).mockRejectedValue({
       kind: 'invalidArgument',
@@ -116,6 +140,18 @@ describe('SettingsModal', () => {
     await fireEvent.click(within(panel).getByRole('radio', { name: /Half precision/ }));
 
     expect(commands.updateSettings).toHaveBeenCalledWith({ ...SETTINGS, modelVariant: 'fp16' });
+  });
+
+  it('checks the files of an installed variant on demand', async () => {
+    vi.mocked(commands.getSettings).mockResolvedValue({ ...SETTINGS, modelVariant: 'fp16' });
+    vi.mocked(commands.downloadModels).mockResolvedValue(null);
+    open();
+    await fireEvent.click(screen.getByRole('tab', { name: 'Models' }));
+    const panel = screen.getByRole('tabpanel', { name: 'Models' });
+
+    await fireEvent.click(await within(panel).findByRole('button', { name: 'Check files' }));
+
+    expect(commands.downloadModels).toHaveBeenCalledWith('fp16');
   });
 
   it('shows the cache sizes and wires the clear and sync buttons', async () => {

@@ -195,7 +195,7 @@ The ONNX files are hosted on Hugging Face at
   download, so a corrupted one is fetched again. The status shown in the UI only checks
   file sizes, because hashing hundreds of megabytes on every check is too slow.
 - Settings live in `settings.json`, written atomically (temporary file + rename). A file
-  that cannot be read or fails validation is moved to `settings.json.bak` and the
+  that cannot be parsed or fails validation is moved to `settings.json.bak` and the
   defaults are used.
 - The default ViT variant will be chosen from benchmarks on real hardware. The user can
   switch variants in settings.

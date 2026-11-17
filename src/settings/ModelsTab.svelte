@@ -3,7 +3,7 @@
   import type { ModelVariantDto } from '../lib/bindings';
   import DownloadProgress from './DownloadProgress.svelte';
   import { formatBytes, VARIANT_NAMES } from './format';
-  import type { ModelsState } from './models.svelte';
+  import { bytesToDownload, type ModelsState } from './models.svelte';
   import type { SettingsState } from './settings.svelte';
 
   interface Props {
@@ -56,7 +56,17 @@
       disabled={models.downloading !== null}
       onclick={() => void models.download(selectedStatus.variant)}
     >
-      Download ({formatBytes(selectedStatus.bytesTotal)})
+      Download ({formatBytes(bytesToDownload(selectedStatus))})
+    </button>
+  {:else if selectedStatus}
+    <!-- Installed only means the sizes match; this hashes every file and refetches any
+         corrupted one. -->
+    <button
+      type="button"
+      disabled={models.downloading !== null}
+      onclick={() => void models.download(selectedStatus.variant)}
+    >
+      Check files
     </button>
   {/if}
   {#if models.error}

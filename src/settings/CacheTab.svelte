@@ -15,7 +15,6 @@
   let { models }: Props = $props();
 
   let stats = $state.raw<CacheStats | null>(null);
-  let note = $state<string | null>(null);
   let error = $state<string | null>(null);
 
   async function load() {
@@ -26,25 +25,24 @@
     }
   }
 
-  async function run(action: () => Promise<unknown>, done: string) {
+  /** Runs `action`, then shows the sizes again: they tell what it actually did. */
+  async function run(action: () => Promise<unknown>) {
     error = null;
-    note = null;
     try {
       await action();
-      note = done;
     } catch (reason) {
       error = errorMessage(reason);
     }
     await load();
   }
 
-  function clear(kind: CacheKind, done: string) {
+  function clear(kind: CacheKind) {
     return run(async () => {
       await commands.clearCache(kind);
       if (kind === 'models') {
         await models.refresh();
       }
-    }, done);
+    });
   }
 
   onMount(() => void load());
@@ -67,22 +65,11 @@
 {/if}
 
 <div class="buttons">
-  <button type="button" onclick={() => void clear('images', 'Card images cleared.')}>
-    Clear images
-  </button>
-  <button type="button" onclick={() => void clear('cardData', 'Card data cleared.')}>
-    Clear card data
-  </button>
-  <button type="button" onclick={() => void clear('models', 'Models deleted.')}>
-    Delete models
-  </button>
-  <button type="button" onclick={() => void run(() => commands.syncCardDb(), 'Card data synced.')}>
-    Sync now
-  </button>
+  <button type="button" onclick={() => void clear('images')}> Clear images </button>
+  <button type="button" onclick={() => void clear('cardData')}> Clear card data </button>
+  <button type="button" onclick={() => void clear('models')}> Delete models </button>
+  <button type="button" onclick={() => void run(() => commands.syncCardDb())}> Sync now </button>
 </div>
-{#if note}
-  <p class="note" role="status">{note}</p>
-{/if}
 {#if error}
   <p class="error" role="alert">{error}</p>
 {/if}

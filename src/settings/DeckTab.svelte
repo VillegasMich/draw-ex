@@ -3,18 +3,18 @@
   import { onMount } from 'svelte';
   import { commands, type DeckId, type DeckSummary } from '../lib/bindings';
   import { errorMessage } from './format';
+  import type { SettingsState } from './settings.svelte';
 
   interface Props {
-    /** The deck selected in the settings, to start from. */
-    initial: DeckId | null;
+    settings: SettingsState;
   }
 
-  let { initial }: Props = $props();
+  let { settings }: Props = $props();
 
   let decks = $state.raw<DeckSummary[] | null>(null);
   // Starts from the settings once; after that it follows the operator's choice.
   // svelte-ignore state_referenced_locally
-  let selected = $state<DeckId | null>(initial);
+  let selected = $state<DeckId | null>(settings.current?.selectedDeck ?? null);
   let error = $state<string | null>(null);
 
   async function select(id: DeckId | null) {
@@ -22,6 +22,9 @@
     try {
       await commands.selectDeck(id);
       selected = id;
+      // The backend may keep the choice in the settings (I1): reload them, so a later
+      // save from another tab does not send a stale deck back.
+      await settings.load();
     } catch (reason) {
       error = errorMessage(reason);
     }

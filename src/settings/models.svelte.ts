@@ -9,6 +9,14 @@ import {
 } from '../lib/bindings';
 import { errorMessage } from './format';
 
+/**
+ * Bytes still to download for `status`: shared files and partial downloads already on
+ * disk are not fetched again.
+ */
+export function bytesToDownload(status: VariantStatus): number {
+  return Math.max(status.bytesTotal - status.bytesOnDisk, 0);
+}
+
 export class ModelsState {
   /** What is installed, or `null` until the first status arrives. */
   status = $state.raw<ModelStatus | null>(null);
@@ -74,7 +82,11 @@ export class ModelsState {
     }
   }
 
-  /** Downloads `variant`'s files, resuming a partial download. One at a time. */
+  /**
+   * Downloads `variant`'s files, resuming a partial download. One at a time. Files
+   * already in place are hashed first, so this also checks an installed variant and
+   * fetches any corrupted file again.
+   */
   async download(variant: ModelVariantDto): Promise<void> {
     if (this.downloading) {
       return;

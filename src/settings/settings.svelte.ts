@@ -17,16 +17,26 @@ export class SettingsState {
     }
   }
 
-  /** Saves the settings with `change` applied. The backend validates them. */
-  async update(change: Partial<Settings>): Promise<void> {
-    if (!this.current) {
-      return;
-    }
-    try {
-      this.current = await commands.updateSettings({ ...this.current, ...change });
-      this.error = null;
-    } catch (error) {
-      this.error = errorMessage(error);
-    }
+  /** The save in progress, so saves run one after another. */
+  #saving: Promise<void> = Promise.resolve();
+
+  /**
+   * Saves the settings with `change` applied. The backend validates them. Saves run in
+   * order, each applied on top of the previous one, so a quick second change can neither
+   * overtake the first nor undo it.
+   */
+  update(change: Partial<Settings>): Promise<void> {
+    this.#saving = this.#saving.then(async () => {
+      if (!this.current) {
+        return;
+      }
+      try {
+        this.current = await commands.updateSettings({ ...this.current, ...change });
+        this.error = null;
+      } catch (error) {
+        this.error = errorMessage(error);
+      }
+    });
+    return this.#saving;
   }
 }

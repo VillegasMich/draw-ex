@@ -79,7 +79,7 @@
       {:else if tab === 'Cache'}
         <CacheTab {models} />
       {:else}
-        <DeckTab initial={settings.current?.selectedDeck ?? null} />
+        <DeckTab {settings} />
       {/if}
       {#if settings.error}
         <p class="error" role="alert">{settings.error}</p>
