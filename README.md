@@ -239,8 +239,8 @@ All paths are under the OS app-data directory resolved by Tauri:
 models/      ONNX files + label JSON + manifest (revision, sha256)
 cards.db     SQLite: card data, sync metadata
 images/      full/ small/ cropped/  <passcode>.jpg (+ <passcode>.missing markers)
-decks/       imported .ydk files
-duels/       one JSONL log per session (+ recordings, later)
+decks/       <id>/<name>.ydk, one folder per imported deck list
+duels/       one JSONL log per session, named by its UTC start (+ recordings, later)
 settings.json
 ```
 

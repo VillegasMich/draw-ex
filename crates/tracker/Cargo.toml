@@ -15,8 +15,10 @@ specta = ["dep:specta", "domain/specta"]
 [dependencies]
 domain.workspace = true
 serde.workspace = true
+# The duel log is JSON Lines.
+serde_json.workspace = true
 specta = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+tempfile = "3.27.0"

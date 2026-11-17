@@ -360,9 +360,20 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - Then one line per `TrackEvent`, with both its `performance.now()` time and the
     wall-clock time derived from the session's origin.
   - Each line is **flushed** as it is written, so a crash loses nothing.
+  - The file name is the session start in UTC, ISO-like without `:` (Windows), to the
+    millisecond: `2025-11-14T15-52-00.123Z.jsonl` (`DuelLog::file_name`).
+  - Lines are flat: the header is `{ id, startedAtMs, setup, originPerfMs }`, and each
+    event line is the `TrackEvent` plus `wallClockMs` =
+    `startedAtMs + (timeMs − originPerfMs)`.
+  - `DuelLog::start(path, session, setup, origin_perf_ms)` replaces `DuelLog::create`
+    and never overwrites an existing file.
+  - `DuelLog::read` skips a partially written last line and reports it (`truncated`).
+  - Points on a split line, and every point of a degenerate one (`from == to`),
+    belong to Player A. `CameraSetup::player_for` gives the player for a camera and
+    point.
 - **Done when**:
-  - [ ] Unit tests cover each setup.
-  - [ ] The log round-trips through serde.
+  - [x] Unit tests cover each setup.
+  - [x] The log round-trips through serde.
 
 ### Stream D: app and frontend (draw-ex)
 
