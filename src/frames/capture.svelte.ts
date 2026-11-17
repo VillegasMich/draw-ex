@@ -1,7 +1,7 @@
 // Frame capture at the inference rate, with at most one frame in flight per camera
 // (D2, ADR-0003). Awaiting each frame's response is the backpressure: a tick that finds
 // the camera's previous frame still in flight is skipped, never queued.
-import type { CameraId, DetectionDto } from '../lib/bindings';
+import type { CameraId } from '../lib/bindings';
 import { submitFrame, type FramePixels } from '../lib/frames';
 import { liveView } from '../overlay/live-view.svelte';
 
@@ -25,12 +25,6 @@ export interface CaptureStats {
   failed: number;
   /** How long the last answered frame took, from send to response, in milliseconds. */
   lastRoundTripMs: number | null;
-}
-
-/** Where captured frames go, and where their detections land. */
-export interface CaptureDeps {
-  submit: typeof submitFrame;
-  onDetections: (camera: CameraId, detections: DetectionDto[]) => void;
 }
 
 /** One `start` … stop span of a camera, shared by every source showing that camera. */
@@ -66,24 +60,16 @@ function tickMs(fps: number): number {
 
 /** Sends each camera's frames to `submit_frame` and feeds the detections to `liveView`. */
 export class FrameCapture {
-  #deps: CaptureDeps;
   // Bookkeeping that nothing renders; the counters below are the reactive part.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #cameras = new Map<CameraId, CameraEntry>();
   #stats = $state<Record<CameraId, CaptureStats>>({});
 
-  constructor(deps: Partial<CaptureDeps> = {}) {
-    this.#deps = {
-      submit: deps.submit ?? submitFrame,
-      onDetections:
-        deps.onDetections ?? ((camera, detections) => liveView.setDetections(camera, detections)),
-    };
-  }
-
   /**
    * Captures `camera` from `source` at `fps` frames per second until the returned
    * function is called. Starting a camera that is already capturing (the same camera
-   * shown twice) shares its rate and in-flight frame; the latest source is used.
+   * shown twice) shares its rate and in-flight frame; the latest source is used. Once
+   * nothing captures the camera, its detections are cleared.
    */
   start(camera: CameraId, source: FrameSource, fps: number): () => void {
     const entry = this.#entry(camera);
@@ -105,6 +91,7 @@ export class FrameCapture {
       if (run.sources.length === 0) {
         clearInterval(run.timer);
         if (entry.run === run) entry.run = null;
+        liveView.setDetections(camera, []);
       }
     };
   }
@@ -138,17 +125,16 @@ export class FrameCapture {
     stats.sent += 1;
     stats.inFlight = entry.inFlight;
     stats.maxInFlight = Math.max(stats.maxInFlight, entry.inFlight);
-    this.#deps
-      .submit(camera, frame, sentAt)
+    submitFrame(camera, frame, sentAt)
       .then(
         (detections) => {
           // A response that arrives after its run stopped is stale: ignore it.
           if (entry.run !== run) return;
           stats.lastRoundTripMs = performance.now() - sentAt;
-          this.#deps.onDetections(camera, detections);
+          liveView.setDetections(camera, detections);
         },
         () => {
-          stats.failed += 1;
+          if (entry.run === run) stats.failed += 1;
         },
       )
       .finally(() => {

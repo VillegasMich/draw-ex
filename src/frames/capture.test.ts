@@ -222,4 +222,31 @@ describe('FrameCapture', () => {
     expect(capture.stats('cam-1').maxInFlight).toBe(1);
     stopBottom();
   });
+
+  it('ignores a failure that arrives after capture stopped', async () => {
+    const capture = new FrameCapture();
+    const stop = capture.start('cam-1', source(), 10);
+    await vi.advanceTimersByTimeAsync(100);
+
+    stop();
+    calls[0].reject({ kind: 'internal', message: 'recognition has stopped' });
+    await settle();
+
+    expect(capture.stats('cam-1')).toMatchObject({ failed: 0, inFlight: 0 });
+  });
+
+  it("clears the camera's detections once nothing captures it", async () => {
+    const capture = new FrameCapture();
+    const stopTop = capture.start('cam-1', source(), 10);
+    const stopBottom = capture.start('cam-1', source(), 10);
+    await vi.advanceTimersByTimeAsync(100);
+    calls[0].resolve([detection(10)]);
+    await settle();
+
+    stopTop();
+    expect(liveView.detections('cam-1')).toEqual([detection(10)]);
+
+    stopBottom();
+    expect(liveView.detections('cam-1')).toEqual([]);
+  });
 });

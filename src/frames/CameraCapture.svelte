@@ -80,8 +80,8 @@
     margin: 0;
     padding: 0 var(--space-1);
     font-family: ui-monospace, monospace;
-    font-size: 11px;
-    color: #fff;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
     pointer-events: none;
     background: rgb(0 0 0 / 60%);
     border-radius: var(--radius-sm);
