@@ -412,6 +412,7 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
 - **Done when**:
   - [ ] With a recognizer that sleeps 500 ms, the preview stays at full fps, no frames
     queue up, and memory stays flat over 10 minutes.
+    Partial runs on macOS (7, 3.5, 3.5 and 6 min, `DRAW_EX_FAKE_RECOGNIZER_DELAY_MS=500`) showed flat RSS (450–810 MB, app plus WebKit), at most 1 frame in flight per camera, 0 failures and a 27–31 fps preview. The full 10-minute soak moves to I2.
 
 #### D3: Overlay and panels
 - **Branch**: `feat/overlay-panels`. **Owns**: `src/overlay/`, `src/panels/`. It may
