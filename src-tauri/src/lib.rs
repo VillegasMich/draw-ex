@@ -19,6 +19,10 @@ pub fn run() -> tauri::Result<()> {
     let app =
         ipc::register_commands(tauri::Builder::default()).build(tauri::generate_context!())?;
     ipc::mount_events(&app);
-    app.run(|_, _| {});
+    app.run(|app, event| {
+        if let tauri::RunEvent::Exit = event {
+            tauri::Manager::state::<pipeline::Pipeline>(app).shutdown();
+        }
+    });
     Ok(())
 }

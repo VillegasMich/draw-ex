@@ -93,8 +93,13 @@ and the macOS `.dmg` directly.
 
 - The **webview captures the camera** (`getUserMedia`, one stream per camera) and shows it
   in a `<video>` element, so display stays smooth no matter how slow inference is.
-- At the inference rate (target 5–10 fps per camera), the frontend grabs the current
-  frame and sends its raw pixels to Rust over Tauri's binary IPC.
+- At the inference rate (the `inferenceFps` setting, default 6 fps per camera), the
+  frontend draws the current frame at **full resolution** onto a reused canvas and sends
+  its raw pixels to Rust over Tauri's binary IPC (`src/frames/`).
+- Rust recognizes frames on **one dedicated worker thread** that owns the recognizer and
+  serves every camera in arrival order, through a small bounded queue
+  (`src-tauri/src/pipeline/`). `submit_frame` awaits its reply without blocking the async
+  runtime, and the thread is joined when the app exits.
 - **Backpressure**: at most one frame per camera is in flight. While Rust is busy, frames
   are skipped rather than queued, so results never fall behind the live feed.
 - Rust replies with detections in source-frame pixel coordinates plus the frame's
