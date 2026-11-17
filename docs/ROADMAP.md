@@ -469,9 +469,9 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - Dependencies: `reqwest` (rustls), `sha2` and `tokio` in `src-tauri`.
   - Cache and sync commands stay stubs until I1.
 - **Done when**:
-  - [ ] An interrupted download resumes.
-  - [ ] A corrupted file is detected and fetched again.
-  - [ ] Settings persist across restarts.
+  - [x] An interrupted download resumes.
+  - [x] A corrupted file is detected and fetched again.
+  - [x] Settings persist across restarts.
 
 ---
 
