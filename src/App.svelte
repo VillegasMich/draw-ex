@@ -22,7 +22,7 @@
   import { commands, type CameraId, type IpcError } from './lib/bindings';
   import { CameraOverlay, DemoStandIn, DemoToggle, liveView } from './overlay';
   import { connectPanels, DuelLog, panels, PlayerPanel } from './panels';
-  import { ModelsBanner, ModelsState, SettingsModal, SettingsState } from './settings';
+  import { appSettings, ModelsBanner, ModelsState, SettingsModal } from './settings';
 
   let cameras = $state.raw<CameraDevice[]>([]);
   let connecting = $state(true);
@@ -37,7 +37,6 @@
   let setupOpen = $state(false);
   let setupProblem = $state<string | null>(null);
   let settingsOpen = $state(false);
-  const settings = new SettingsState();
   const models = new ModelsState();
 
   let slots = $derived(selection ? cameraSlots(selection) : []);
@@ -139,6 +138,7 @@
 
   onMount(connectPanels);
   onMount(() => models.connect());
+  onMount(() => void appSettings.load());
 
   onMount(() => {
     void connect();
@@ -212,7 +212,12 @@
   onclose={() => (setupOpen = false)}
 />
 
-<SettingsModal open={settingsOpen} {settings} {models} onclose={() => (settingsOpen = false)} />
+<SettingsModal
+  open={settingsOpen}
+  settings={appSettings}
+  {models}
+  onclose={() => (settingsOpen = false)}
+/>
 
 <style>
   .layout {

@@ -505,6 +505,8 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
   - Default model variant: **Int8** (user decision after A3). The pinned FP16 classifier
     outputs 13,820 classes against 13,968 labels in `cardnames_onnx.json`, so it reports
     wrong cards; it stays selectable, marked "not recommended — labels mismatch".
+  - An inference fps saved in Settings applies to running captures at once
+    (`FrameCapture.setFps`), without restarting them.
 - **Done when**:
   - [x] An interrupted download resumes.
   - [x] A corrupted file is detected and fetched again.

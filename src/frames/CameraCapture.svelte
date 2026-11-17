@@ -1,11 +1,14 @@
 <!--
   Captures one camera's frames for recognition while mounted. Mount it in `CameraView`'s
   `overlay` snippet: that only renders while the camera is live, so capture stops when
-  the camera errors or leaves the setup. In dev builds it also shows the capture
-  counters and the preview's frame rate.
+  the camera errors or leaves the setup. The capture rate follows the inference rate in
+  the app's settings, live. In dev builds it also shows the capture counters, the
+  capture rate and the preview's frame rate.
 -->
 <script lang="ts">
-  import { commands, type CameraId } from '../lib/bindings';
+  import { untrack } from 'svelte';
+  import type { CameraId } from '../lib/bindings';
+  import { appSettings } from '../settings';
   import { DEFAULT_INFERENCE_FPS, frameCapture } from './capture.svelte';
   import { videoFrameSource } from './video-source';
 
@@ -17,27 +20,21 @@
 
   let { camera, video }: Props = $props();
 
-  /** The rate from the settings, read once each time capture starts. */
-  async function inferenceFps(): Promise<number> {
-    try {
-      return (await commands.getSettings()).inferenceFps;
-    } catch {
-      return DEFAULT_INFERENCE_FPS;
-    }
-  }
+  /** The rate from the settings; the default until they load. */
+  const fps = $derived(appSettings.current?.inferenceFps ?? DEFAULT_INFERENCE_FPS);
+
+  // Starts capture once per camera and video. The rate is read untracked, so a new rate
+  // does not restart capture: the effect below applies it to the running capture.
+  $effect(() => {
+    return frameCapture.start(
+      camera,
+      videoFrameSource(video),
+      untrack(() => fps),
+    );
+  });
 
   $effect(() => {
-    const id = camera;
-    const element = video;
-    let stop: (() => void) | undefined;
-    let cancelled = false;
-    void inferenceFps().then((fps) => {
-      if (!cancelled) stop = frameCapture.start(id, videoFrameSource(element), fps);
-    });
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
+    frameCapture.setFps(camera, fps);
   });
 
   const stats = $derived(frameCapture.stats(camera));
@@ -65,7 +62,8 @@
 
 {#if import.meta.env.DEV}
   <p class="readout" data-testid="capture-readout">
-    preview {previewFps ?? '–'} fps · sent {stats.sent} · skipped {stats.skipped} · in flight
+    preview {previewFps ?? '–'} fps · capture {fps} fps · sent {stats.sent} · skipped {stats.skipped}
+    · in flight
     {stats.inFlight} (max {stats.maxInFlight}) · failed {stats.failed} · round trip
     {stats.lastRoundTripMs === null ? '–' : Math.round(stats.lastRoundTripMs)} ms
   </p>

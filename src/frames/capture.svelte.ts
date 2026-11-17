@@ -30,6 +30,8 @@ export interface CaptureStats {
 /** One `start` … stop span of a camera, shared by every source showing that camera. */
 interface Run {
   sources: FrameSource[];
+  /** The rate the timer ticks at, in frames per second. */
+  fps: number;
   timer: ReturnType<typeof setInterval>;
 }
 
@@ -76,6 +78,7 @@ export class FrameCapture {
     if (!entry.run) {
       const run: Run = {
         sources: [],
+        fps,
         timer: setInterval(() => this.#tick(camera, entry, run), tickMs(fps)),
       };
       entry.run = run;
@@ -94,6 +97,20 @@ export class FrameCapture {
         liveView.setDetections(camera, []);
       }
     };
+  }
+
+  /**
+   * Changes the rate of `camera`'s running capture to `fps` frames per second, e.g. when
+   * the operator saves a new inference rate. The run carries on: its sources, in-flight
+   * frame and detections stay. Does nothing while the camera is not capturing.
+   */
+  setFps(camera: CameraId, fps: number): void {
+    const entry = this.#cameras.get(camera);
+    const run = entry?.run;
+    if (!entry || !run || run.fps === fps) return;
+    clearInterval(run.timer);
+    run.fps = fps;
+    run.timer = setInterval(() => this.#tick(camera, entry, run), tickMs(fps));
   }
 
   /** `camera`'s counters; all zero before it is first captured. */

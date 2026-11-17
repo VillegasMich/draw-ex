@@ -40,3 +40,9 @@ export class SettingsState {
     return this.#saving;
   }
 }
+
+/**
+ * The app's settings, shared by the Settings modal and everything that follows a setting
+ * live (e.g. frame capture follows the inference rate). Load it once at startup.
+ */
+export const appSettings = new SettingsState();
