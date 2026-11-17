@@ -2,7 +2,7 @@
 //!
 //! - [`CardDb`] holds the card data, bulk-synced from YGOPRODeck into SQLite.
 //! - [`ImageCache`] fetches each card image once and serves it from disk afterwards.
-//! - [`Deck`] is a deck list imported from a `.ydk` file.
+//! - [`Deck`] is a deck list imported from a `.ydk` file, kept in a [`DeckStore`].
 //!
 //! Every YGOPRODeck request goes through one shared rate limiter: the API blocks an IP
 //! above 20 requests per second (see `CLAUDE.md`).
@@ -25,6 +25,6 @@ mod limiter;
 mod sync;
 
 pub use db::{Card, CardDb, CardDbError, Language};
-pub use deck::{Deck, DeckError, DeckId};
-pub use images::{ImageCache, ImageCacheError, ImageCacheStats, ImageSize};
+pub use deck::{Deck, DeckError, DeckId, DeckStore, DeckStoreError, DeckSummary};
+pub use images::{ImageCache, ImageCacheError, ImageCacheStats, ImageSize, PrefetchReport};
 pub use sync::{SyncOutcome, SyncProgress, SyncStage};
