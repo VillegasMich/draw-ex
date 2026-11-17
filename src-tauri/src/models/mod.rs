@@ -12,6 +12,8 @@ use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
+use crate::ipc::types::{IpcError, IpcErrorKind, ModelStatus, VariantStatus};
+
 /// Sent with every request: the app and its version, nothing about the operator.
 const USER_AGENT: &str = concat!("draw-ex/", env!("CARGO_PKG_VERSION"));
 /// How long to wait for a connection to the model host.
@@ -21,8 +23,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// The least time between two progress reports for one file.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
-
-use crate::ipc::types::{IpcError, IpcErrorKind, ModelStatus, VariantStatus};
 
 /// One model file to download: where it goes, where it comes from and how to verify it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,7 +234,7 @@ impl ModelStore {
                 bytes_total: file.size,
             });
         };
-        if file_len(&target).is_some() {
+        if tokio::fs::try_exists(&target).await? {
             if hash_file(&target).await? == file.sha256 {
                 done(on_progress);
                 return Ok(());
@@ -246,7 +246,7 @@ impl ModelStore {
             tokio::fs::create_dir_all(dir).await?;
         }
         for _attempt in 0..2 {
-            if download_part(client, file, &part, on_progress).await? == file.sha256 {
+            if download_part(client, file, &part, on_progress).await? {
                 tokio::fs::rename(&part, &target).await?;
                 done(on_progress);
                 return Ok(());
@@ -264,16 +264,20 @@ impl ModelStore {
     }
 }
 
-/// Downloads `file` into `part`, resuming from the bytes already there, and returns the
-/// SHA-256 of the result in lowercase hex. Stops early, with a hash that cannot match,
-/// if the server sends more than the manifest size.
+/// Downloads `file` into `part`, resuming from the bytes already there, and tells
+/// whether the result matches the file's SHA-256. A server that sends more than the
+/// manifest size, or resumes at the wrong offset, gives a mismatch.
 async fn download_part(
     client: &reqwest::Client,
     file: &ModelFile,
     part: &Path,
     on_progress: &mut impl FnMut(DownloadProgress<'_>),
-) -> Result<String, ModelError> {
-    let mut done = file_len(part).unwrap_or(0);
+) -> Result<bool, ModelError> {
+    let mut done = match tokio::fs::metadata(part).await {
+        Ok(meta) => meta.len(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(e) => return Err(e.into()),
+    };
     if done > file.size {
         tokio::fs::remove_file(part).await?;
         done = 0;
@@ -284,7 +288,7 @@ async fn download_part(
         Sha256::new()
     };
     if done == file.size {
-        return Ok(hex(hasher));
+        return Ok(hex(hasher) == file.sha256);
     }
 
     let network = |source| ModelError::Network {
@@ -298,6 +302,9 @@ async fn download_part(
     let mut response = request.send().await.map_err(network)?;
     let mut out = match response.status() {
         StatusCode::PARTIAL_CONTENT if done > 0 => {
+            if range_start(&response) != Some(done) {
+                return Ok(false);
+            }
             tokio::fs::OpenOptions::new()
                 .append(true)
                 .open(part)
@@ -322,15 +329,30 @@ async fn download_part(
     while let Some(chunk) = response.chunk().await.map_err(network)? {
         done += chunk.len() as u64;
         if done > file.size {
-            out.flush().await?;
-            return Ok(String::new());
+            return Ok(false);
         }
         out.write_all(&chunk).await?;
         hasher.update(&chunk);
         progress.report(done);
     }
     out.sync_all().await?;
-    Ok(hex(hasher))
+    Ok(hex(hasher) == file.sha256)
+}
+
+/// The first byte offset of a `206 Partial Content` response, from its `Content-Range`
+/// header (`bytes <start>-<end>/<size>`).
+fn range_start(response: &reqwest::Response) -> Option<u64> {
+    let value = response
+        .headers()
+        .get(reqwest::header::CONTENT_RANGE)?
+        .to_str()
+        .ok()?;
+    value
+        .strip_prefix("bytes ")?
+        .split('-')
+        .next()?
+        .parse()
+        .ok()
 }
 
 /// Reports progress at most every [`PROGRESS_INTERVAL`], so a fast download does not
@@ -670,7 +692,14 @@ mod tests {
             Mock::given(method("GET"))
                 .and(path("/int8.onnx"))
                 .and(header("range", "bytes=10-"))
-                .respond_with(ResponseTemplate::new(206).set_body_bytes(&CLASSIFIER[10..]))
+                .respond_with(
+                    ResponseTemplate::new(206)
+                        .insert_header(
+                            "content-range",
+                            format!("bytes 10-{}/{}", CLASSIFIER.len() - 1, CLASSIFIER.len()),
+                        )
+                        .set_body_bytes(&CLASSIFIER[10..]),
+                )
                 .expect(1)
                 .mount(&server)
                 .await;
@@ -685,6 +714,34 @@ mod tests {
 
             assert_eq!(read(dir.path(), "int8.onnx"), CLASSIFIER);
             assert_eq!(parts(dir.path()), Vec::<PathBuf>::new());
+        }
+
+        #[tokio::test]
+        async fn a_resume_at_the_wrong_offset_is_discarded_and_fetched_again() {
+            let server = MockServer::start().await;
+            serve(&server, "det.onnx", DETECTOR, 1).await;
+            Mock::given(method("GET"))
+                .and(path("/int8.onnx"))
+                .and(header("range", "bytes=10-"))
+                .respond_with(
+                    ResponseTemplate::new(206)
+                        .insert_header("content-range", "bytes 0-9/45")
+                        .set_body_bytes(&CLASSIFIER[..10]),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            serve(&server, "int8.onnx", CLASSIFIER, 1).await;
+            let dir = TempDir::new().unwrap();
+            std::fs::create_dir_all(dir.path().join("onnx")).unwrap();
+            std::fs::write(dir.path().join("onnx/int8.onnx.part"), &CLASSIFIER[..10]).unwrap();
+
+            store(dir.path(), &server)
+                .download(ModelVariant::Int8, |_| {})
+                .await
+                .expect("the retry from zero succeeds");
+
+            assert_eq!(read(dir.path(), "int8.onnx"), CLASSIFIER);
         }
 
         #[tokio::test]

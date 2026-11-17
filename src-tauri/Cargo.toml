@@ -29,7 +29,7 @@ tauri = { version = "2.12.5", features = [] }
 # tauri-specta and specta-typescript are rcs: pin them exactly, with specta.
 tauri-specta = { version = "=2.0.0-rc.29", features = ["derive", "typescript"] }
 thiserror.workspace = true
-tokio = { version = "1.54.1", features = ["fs", "io-util", "rt", "sync", "time"] }
+tokio = { version = "1.54.1", features = ["fs", "io-util", "rt", "sync"] }
 tracker = { workspace = true, features = ["specta"] }
 
 [dev-dependencies]

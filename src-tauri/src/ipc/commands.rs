@@ -125,7 +125,8 @@ pub fn get_settings(store: State<'_, SettingsStore>) -> Result<Settings, IpcErro
 ///
 /// `invalidArgument` when a value is out of range, `io` when `settings.json` cannot be
 /// written. Either way the previous settings stay in effect.
-#[tauri::command]
+// Writes or stats files: kept off the main thread, which runs the window.
+#[tauri::command(async)]
 #[specta::specta]
 pub fn update_settings(
     store: State<'_, SettingsStore>,
@@ -139,7 +140,8 @@ pub fn update_settings(
 /// # Errors
 ///
 /// Never fails.
-#[tauri::command]
+// Writes or stats files: kept off the main thread, which runs the window.
+#[tauri::command(async)]
 #[specta::specta]
 pub fn model_status(
     models: State<'_, ModelStore>,
