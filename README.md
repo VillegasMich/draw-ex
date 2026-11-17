@@ -212,13 +212,19 @@ Design:
 - **Images**: fetched on demand the first time a card is shown, then served from disk
   forever. Three sizes are available: `cards/`, `cards_small/` and `cards_cropped/` (the
   cropped artwork is missing for some cards). When a deck list is loaded, its card images
-  are prefetched.
+  are prefetched. A download is written to a `.part` file and renamed, so a crash never
+  leaves a truncated image. An image YGOPRODeck does not have (a 404) is remembered with
+  a `<passcode>.missing` marker and never requested again; other failures are retried
+  on the next request. The image cache shares the card data's rate limiter
+  (`CardDb::image_cache`).
 - **One global rate limiter** guards every request to YGOPRODeck: 10 requests/s with
   no burst, half the 20/s limit. The frontend never loads YGOPRODeck URLs directly:
   images reach the webview from the local cache.
 - **Cache management**: a settings screen shows the cache size, with buttons to clear
-  images, re-sync data, or delete models. The image cache has a size cap with LRU
-  eviction.
+  images, re-sync data, or delete models. The image cache has a size cap (settings
+  `image_cache_mb`, default 1024) with LRU eviction: an image is touched each time it is
+  read, and after each download the least recently accessed images are deleted until the
+  cache fits. Missing-image markers do not count toward the cap.
 - **Card identity**: everything is keyed by **passcode** (the 8-digit number on the card,
   which is YGOPRODeck's `id` and the suffix of the ViT label `Card-Name-<passcode>`).
   Passcodes are normalized as integers, because some sources pad them with leading zeros.
@@ -232,7 +238,7 @@ All paths are under the OS app-data directory resolved by Tauri:
 ```
 models/      ONNX files + label JSON + manifest (revision, sha256)
 cards.db     SQLite: card data, sync metadata
-images/      full/ small/ cropped/  <passcode>.jpg
+images/      full/ small/ cropped/  <passcode>.jpg (+ <passcode>.missing markers)
 decks/       <id>/<name>.ydk, one folder per imported deck list
 duels/       one JSONL log per session, named by its UTC start (+ recordings, later)
 settings.json

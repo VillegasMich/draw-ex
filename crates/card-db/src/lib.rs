@@ -26,5 +26,5 @@ mod sync;
 
 pub use db::{Card, CardDb, CardDbError, Language};
 pub use deck::{Deck, DeckError, DeckId, DeckStore, DeckStoreError, DeckSummary};
-pub use images::{ImageCache, ImageCacheError, ImageCacheStats, ImageSize};
+pub use images::{ImageCache, ImageCacheError, ImageCacheStats, ImageSize, PrefetchReport};
 pub use sync::{SyncOutcome, SyncProgress, SyncStage};
