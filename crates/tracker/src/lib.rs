@@ -26,6 +26,8 @@ mod players;
 mod track;
 mod vote;
 
-pub use log::{DuelLog, LogError, SessionId, SessionInfo};
+pub use log::{
+    DuelLog, DuelLogContents, DuelLogHeader, LogError, LoggedEvent, SessionId, SessionInfo,
+};
 pub use players::{CameraSetup, SplitLine};
 pub use track::{Observation, ObservedCandidate, TrackEvent, TrackId, Tracker, TrackerConfig};

@@ -93,8 +93,13 @@ and the macOS `.dmg` directly.
 
 - The **webview captures the camera** (`getUserMedia`, one stream per camera) and shows it
   in a `<video>` element, so display stays smooth no matter how slow inference is.
-- At the inference rate (target 5–10 fps per camera), the frontend grabs the current
-  frame and sends its raw pixels to Rust over Tauri's binary IPC.
+- At the inference rate (the `inferenceFps` setting, default 6 fps per camera), the
+  frontend draws the current frame at **full resolution** onto a reused canvas and sends
+  its raw pixels to Rust over Tauri's binary IPC (`src/frames/`).
+- Rust recognizes frames on **one dedicated worker thread** that owns the recognizer and
+  serves every camera in arrival order, through a small bounded queue
+  (`src-tauri/src/pipeline/`). `submit_frame` awaits its reply without blocking the async
+  runtime, and the thread is joined when the app exits.
 - **Backpressure**: at most one frame per camera is in flight. While Rust is busy, frames
   are skipped rather than queued, so results never fall behind the live feed.
 - Rust replies with detections in source-frame pixel coordinates plus the frame's
@@ -220,13 +225,19 @@ Design:
 - **Images**: fetched on demand the first time a card is shown, then served from disk
   forever. Three sizes are available: `cards/`, `cards_small/` and `cards_cropped/` (the
   cropped artwork is missing for some cards). When a deck list is loaded, its card images
-  are prefetched.
+  are prefetched. A download is written to a `.part` file and renamed, so a crash never
+  leaves a truncated image. An image YGOPRODeck does not have (a 404) is remembered with
+  a `<passcode>.missing` marker and never requested again; other failures are retried
+  on the next request. The image cache shares the card data's rate limiter
+  (`CardDb::image_cache`).
 - **One global rate limiter** guards every request to YGOPRODeck: 10 requests/s with
   no burst, half the 20/s limit. The frontend never loads YGOPRODeck URLs directly:
   images reach the webview from the local cache.
 - **Cache management**: a settings screen shows the cache size, with buttons to clear
-  images, re-sync data, or delete models. The image cache has a size cap with LRU
-  eviction.
+  images, re-sync data, or delete models. The image cache has a size cap (settings
+  `image_cache_mb`, default 1024) with LRU eviction: an image is touched each time it is
+  read, and after each download the least recently accessed images are deleted until the
+  cache fits. Missing-image markers do not count toward the cap.
 - **Card identity**: everything is keyed by **passcode** (the 8-digit number on the card,
   which is YGOPRODeck's `id` and the suffix of the ViT label `Card-Name-<passcode>`).
   Passcodes are normalized as integers, because some sources pad them with leading zeros.
@@ -241,9 +252,9 @@ All paths are under the OS app-data directory resolved by Tauri:
 models/      onnx/<file> as draw-core's manifest names it (ONNX + label JSON);
              <file>.part while a download is in progress
 cards.db     SQLite: card data, sync metadata
-images/      full/ small/ cropped/  <passcode>.jpg
-decks/       imported .ydk files
-duels/       one JSONL log per session (+ recordings, later)
+images/      full/ small/ cropped/  <passcode>.jpg (+ <passcode>.missing markers)
+decks/       <id>/<name>.ydk, one folder per imported deck list
+duels/       one JSONL log per session, named by its UTC start (+ recordings, later)
 settings.json
 ```
 

@@ -18,6 +18,7 @@
     type VideoSize,
   } from './camera';
   import { cameraSlots, Toolbar } from './layout';
+  import { CameraCapture } from './frames';
   import { commands, type CameraId, type IpcError } from './lib/bindings';
   import { CameraOverlay, DemoStandIn, DemoToggle, liveView } from './overlay';
   import { connectPanels, DuelLog, panels, PlayerPanel } from './panels';
@@ -171,6 +172,7 @@
           >
             {#snippet overlay(video)}
               <CameraOverlay camera={slot.cameraId} {video} />
+              <CameraCapture camera={slot.cameraId} {video} />
             {/snippet}
           </CameraView>
         {/each}

@@ -22,6 +22,10 @@ pub fn run() -> tauri::Result<()> {
     tauri::Manager::manage(&app, settings::SettingsStore::open(&data_dir));
     tauri::Manager::manage(&app, models::ModelStore::pinned(&data_dir));
     ipc::mount_events(&app);
-    app.run(|_, _| {});
+    app.run(|app, event| {
+        if let tauri::RunEvent::Exit = event {
+            tauri::Manager::state::<pipeline::Pipeline>(app).shutdown();
+        }
+    });
     Ok(())
 }
