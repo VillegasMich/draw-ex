@@ -30,7 +30,7 @@ Phase 1        ├─ A1 ─┐
                ├─ C1    C2                            tracker
                └─ D1 ─► D2      D3    D4              app / frontend
                               │
-Phase 2        I1 ─► I2       (needs A3 B1 B2 C1 C2 D2 D3)
+Phase 2        I1a ─► I1b ─► I2   (I1a needs B1 B2 B3 D4; I1b needs A3 C1 C2 D2)
 Phase 3        R1 ─► R2
 ```
 
@@ -511,19 +511,66 @@ Port of `docs/scripts/pipeline.js`. The porting notes and gotchas are in the dra
 
 ## Phase 2: Integration
 
-#### I1: Wire the real components
-- **Branch**: `feat/integration`.
-- **Depends on**: A3, B1, B2, C1, C2, D2, D3.
-- **Scope**:
-  - Pin `draw-core-v0.1.0`.
-  - Replace the fakes with draw-core, `tracker` and `card-db`.
-  - Serve card images to the webview from the local cache through a custom protocol.
-    On Windows, WebView2 serves custom schemes as `http://cardimg.localhost/...`
-    rather than `cardimg://...`, so `cardImageUrl` in `src/lib/card-image.ts` needs a
-    per-platform form.
+I1 is split so data wiring can start before draw-core 0.1.0 exists. **I1a merges before
+I1b.**
+
+#### I1a: Wire card data, images, decks and cache
+- **Branch**: `feat/integration-data`. **Depends on**: B1, B2, B3, D4.
+- **Owns**:
+  - a new `src-tauri/src/data/` module, and the handlers of `get_card`, `list_decks`,
+    `import_deck`, `select_deck`, `cache_stats`, `clear_cache` and `sync_card_db` in
+    `src-tauri/src/ipc/commands.rs`;
+  - the `cardimg` protocol registration (`src-tauri/src/lib.rs`, minimal);
+  - `src/lib/card-image.ts`, and the toolbar sync status;
+  - the Settings Deck and Cache tabs (`src/settings/`, minimal);
+  - `src-tauri/Cargo.toml` and capabilities for the dialog plugin.
+- **Decided**:
+  - **Card data**: `get_card` is backed by `CardDb` at `<app data>/cards.db`.
+    - On startup, `needs_check(now)` triggers a background sync, with progress in the
+      toolbar via `card-db-sync-progress`. "Sync now" calls `sync_card_db`.
+    - Changing the card language calls `request_language` and syncs; the panels update
+      **without a restart**.
+  - **Card images** are served by the `cardimg` protocol from
+    `CardDb::image_cache(<app data>/images, image_cache_mb)`, fetched on first use.
+    `cardImageUrl` uses `http://cardimg.localhost/...` on Windows. The selected deck's
+    images are prefetched in the background.
+  - **Decks**: "Import deck…" uses a native file picker (`tauri-plugin-dialog`), then
+    `DeckStore` handles list, select (saved as `selected_deck` in settings) and remove.
+  - **Cache tab**: `cache_stats` and `clear_cache` are real (images, card data, models).
+  - **Unknown cards**: without card data (offline, never synced), the panel shows the
+    English name from the model labels and "details unavailable".
 - **Done when**:
-  - [ ] Playing `sample_video.mp4` as the source shows its cards confirmed in the
-    correct player's panel, with artwork, after first-run setup.
+  - [ ] A fresh app syncs card data, and panels show real names, stats and artwork.
+  - [ ] Importing a `.ydk` lists and selects the deck, and its images are prefetched.
+  - [ ] A language change updates the panels without a restart.
+
+#### I1b: Wire recognition, tracking and sessions
+- **Branch**: `feat/integration-recognition`. **Depends on**: A3 (tag
+  `draw-core-v0.1.0`), C1, C2, D2, I1a.
+- **Owns**:
+  - `src-tauri/src/pipeline/`, `src-tauri/src/ipc/{frames,convert}.rs`;
+  - the session and camera-setup handlers;
+  - a new `src-tauri/src/session/` module;
+  - the toolbar session button, and `src/App.svelte` / `src/panels/` wiring (minimal).
+- **Decided**:
+  - Pin `draw-core-v0.1.0`.
+  - The pipeline worker builds the real `Recognizer` from the installed models, the
+    chosen variant and the selected deck's passcodes, with the CoreML cache in
+    `<app data>/models/coreml-cache`. It is **rebuilt** when the variant, deck or
+    models change.
+  - Without installed models, detections are empty and the banner explains why.
+  - Detections map to tracker `Observation`s in `convert.rs`. The `Tracker` follows the
+    current camera setup, with `tick()` called before each frame's observations.
+    `track-event` is emitted to the panels.
+  - **Sessions**: a **Start duel / End duel** toolbar button. Recognition, overlay and
+    panels are always live. The duel log (`<app data>/duels/`) is written only during a
+    session. Starting a session resets the panels and the log origin.
+- **Done when**:
+  - [ ] With models installed, real cards in front of the camera are confirmed in the
+    correct player's panel with artwork.
+  - [ ] A session writes a readable duel log.
+  - [ ] Playing `sample_video.mp4` as the source shows its cards confirmed (a
+    dev-only video source is fine).
 
 #### I2: Real-duel tuning
 - **Branch**: `feat/real-duel`. **Depends on**: I1, B3, D4.
